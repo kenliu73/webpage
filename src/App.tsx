@@ -12,6 +12,8 @@ import {
   ScanFace,
   ShieldCheck,
   Lock,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import type {
   AuthStatusPayload,
@@ -27,6 +29,7 @@ import type {
 import { formatCurrencyAmount, formatTwd } from './constants/currencies';
 import { authFetch, getSseAuthUrl, setStoredAuthToken } from './utils/authClient';
 import {
+  staticApplyVisaRates,
   staticCreateLedger,
   staticDeleteExpense,
   staticDeleteLedger,
@@ -62,6 +65,14 @@ function getInitialTripCode(): string {
   return localStorage.getItem('travel_ledger_active') || 'TRIP2026';
 }
 
+interface RateApplyNotice {
+  tripName: string;
+  source: string;
+  rateDate: string;
+  appliedRates: { code: string; rate: number }[];
+  updatedExpenseCount: number;
+}
+
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
   const [activeTab, setActiveTab] = useState<AppTab>('ledger');
@@ -74,6 +85,7 @@ export default function App() {
 
   const [rates, setRates] = useState<LiveRatesPayload | null>(null);
   const [ratesLoading, setRatesLoading] = useState<boolean>(false);
+  const [rateNotice, setRateNotice] = useState<RateApplyNotice | null>(null);
 
   const [editingExpense, setEditingExpense] = useState<ExpenseRecord | null>(null);
   const [submittingExpense, setSubmittingExpense] = useState<boolean>(false);
@@ -183,6 +195,22 @@ export default function App() {
   useEffect(() => {
     fetchRates(false);
   }, [fetchRates]);
+
+  const ledgerCurrenciesKey = ledger
+    ? `${ledger.code}:${ledger.settings.currencies.join(',')}`
+    : '';
+
+  // Auto-fetch rates when active trip or its currencies include foreign currencies not yet loaded
+  useEffect(() => {
+    if (!ledger) return;
+    const foreigns = ledger.settings.currencies.filter((c) => c !== 'TWD');
+    if (foreigns.length === 0) return;
+    const hasMissing = foreigns.some((c) => !rates?.ratesToTwd?.[c]);
+    if (hasMissing) {
+      fetchRates(false, ledger.settings.currencies);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerCurrenciesKey]);
 
   const isUnlocked = authChecked && (!authStatus.enabled || authStatus.authenticated);
 
@@ -369,8 +397,81 @@ export default function App() {
     setEditingExpense(null);
     setScopeFilter('all');
     setConfirmDeleteTrip(false);
+    setRateNotice(null);
     setTripCode(nextCode);
   };
+
+  // Fetch live VISA rates and apply selected currencies' rates into the active travel ledger
+  const handleRefreshAndApplyRates = useCallback(async () => {
+    if (!ledger) return;
+    setRatesLoading(true);
+
+    const buildNotice = (
+      targetLedger: TravelLedger,
+      usedRates: LiveRatesPayload,
+      updatedCount: number
+    ): RateApplyNotice => {
+      const appliedRates = targetLedger.settings.currencies
+        .filter((c) => c !== 'TWD')
+        .map((c) => ({
+          code: c,
+          rate: usedRates.ratesToTwd?.[c] ?? targetLedger.settings.visaRates?.[c] ?? 0,
+        }))
+        .filter((item) => item.rate > 0);
+      return {
+        tripName: targetLedger.settings.tripName,
+        source: usedRates.source,
+        rateDate: usedRates.rateDate,
+        appliedRates,
+        updatedExpenseCount: updatedCount,
+      };
+    };
+
+    try {
+      if (!staticMode) {
+        const resp = await authFetch(
+          `/api/ledgers/${encodeURIComponent(tripCode)}/apply-visa-rates`,
+          { method: 'POST' }
+        );
+        if (resp.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        if (resp.ok && isJsonResponse(resp)) {
+          const data = (await resp.json()) as {
+            ledger: TravelLedger;
+            rates: LiveRatesPayload;
+            updatedExpenseCount: number;
+          };
+          setRates(data.rates);
+          setLedger(data.ledger);
+          fetchTripList();
+          setRateNotice(buildNotice(data.ledger, data.rates, data.updatedExpenseCount || 0));
+          return;
+        }
+      }
+
+      const freshRates = await staticFetchLiveRates();
+      const applied = staticApplyVisaRates(tripCode, freshRates);
+      setRates(freshRates);
+      setLedger(applied.ledger);
+      if (staticMode) {
+        setTripList(staticGetLedgerSummaries());
+      }
+      setRateNotice(buildNotice(applied.ledger, freshRates, applied.updatedExpenseCount));
+    } catch {
+      const fallbackRates = await staticFetchLiveRates();
+      const applied = staticApplyVisaRates(tripCode, fallbackRates);
+      setRates(fallbackRates);
+      setLedger(applied.ledger);
+      if (staticMode) {
+        setTripList(staticGetLedgerSummaries());
+      }
+      setRateNotice(buildNotice(applied.ledger, fallbackRates, applied.updatedExpenseCount));
+    } finally {
+      setRatesLoading(false);
+    }
+  }, [ledger, staticMode, tripCode, handleUnauthorized, fetchTripList]);
 
   const handleCreateTrip = async (settings: Partial<LedgerSettings>) => {
     if (staticMode) {
@@ -789,10 +890,10 @@ export default function App() {
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => fetchRates(true, ledger.settings.currencies)}
+            onClick={handleRefreshAndApplyRates}
             disabled={ratesLoading}
-            title="手動更新VISA匯率"
-            aria-label="手動更新VISA匯率"
+            title="更新並套用VISA匯率至目前帳本"
+            aria-label="更新並套用VISA匯率至目前帳本"
             className="control-green h-12 min-w-[44px] px-1.5 rounded-lg text-[11px] leading-tight font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
           >
             <RefreshCw className={`w-4 h-4 shrink-0 ${ratesLoading ? 'animate-spin' : ''}`} />
@@ -846,6 +947,56 @@ export default function App() {
         id="top"
         className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 pb-4 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:overflow-visible md:pb-0"
       >
+        {/* Applied VISA Rate Summary Banner (Visible on both Mobile & Desktop after clicking 匯率) */}
+        {rateNotice && (
+          <section
+            aria-live="polite"
+            className="display-yellow rounded-2xl px-4 py-3 flex items-start justify-between gap-3"
+          >
+            <div className="space-y-1.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm font-bold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>已更新並套用 VISA 匯率至「{rateNotice.tripName}」</span>
+                <span className="text-[11px] font-normal opacity-80">
+                  ({rateNotice.source} · {rateNotice.rateDate})
+                </span>
+              </div>
+
+              {rateNotice.appliedRates.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono-num">
+                  {rateNotice.appliedRates.map((item) => (
+                    <span
+                      key={item.code}
+                      className="rounded-lg bg-yellow-200/70 dark:bg-yellow-900/50 px-2 py-0.5 font-semibold"
+                    >
+                      1 {item.code} = {item.rate.toFixed(4)} TWD
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs opacity-85">
+                  目前此帳本僅設定新台幣 (TWD)，如需外幣匯率請至「行程與貨幣設定」新增外幣。
+                </div>
+              )}
+
+              <div className="text-[11px] opacity-85">
+                {rateNotice.updatedExpenseCount > 0
+                  ? `已同步重算本帳本內 ${rateNotice.updatedExpenseCount} 筆外幣信用卡消費紀錄（外幣現金維持出國前固定匯率）。`
+                  : '已更新本帳本所選貨幣 VISA 匯率（外幣現金維持出國前固定匯率）。'}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRateNotice(null)}
+              aria-label="關閉匯率更新通知"
+              className="control-green h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </section>
+        )}
+
         {/* Compact Workspace Toolbar: Desktop Only (Hidden on mobile per request) */}
         <section className="hidden md:block rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 sm:px-5 sm:py-3.5 space-y-2.5">
           <div className="space-y-1.5 min-w-0">
@@ -936,7 +1087,7 @@ export default function App() {
               {/* Manual Refresh VISA Rates Tool */}
               <button
                 type="button"
-                onClick={() => fetchRates(true, ledger.settings.currencies)}
+                onClick={handleRefreshAndApplyRates}
                 disabled={ratesLoading}
                 className="control-green h-9 px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
               >
@@ -1003,7 +1154,7 @@ export default function App() {
                 budgets={ledger.budgets}
                 rates={rates}
                 ratesLoading={ratesLoading}
-                onRefreshRates={() => fetchRates(true, ledger.settings.currencies)}
+                onRefreshRates={handleRefreshAndApplyRates}
                 editingExpense={editingExpense}
                 onCancelEdit={() => setEditingExpense(null)}
                 onSubmitExpense={handleSubmitExpense}
@@ -1151,6 +1302,7 @@ export default function App() {
 
             <TripSettingsPanel
               settings={ledger.settings}
+              rates={rates}
               onSaveSettings={handleSaveSettings}
               saving={savingSettings}
             />

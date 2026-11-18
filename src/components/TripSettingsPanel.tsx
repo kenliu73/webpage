@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Save, Lock, Plus, X } from 'lucide-react';
-import type { CurrencyCode, LedgerSettings } from '../types';
+import type { CurrencyCode, LedgerSettings, LiveRatesPayload } from '../types';
 import { CURRENCY_CATALOG, getCurrencyMeta } from '../constants/currencies';
 import { addDaysToDateString, diffDaysInclusive } from '../utils/calculations';
 import { NumericCalculatorInput } from './NumericCalculatorInput';
 
 interface TripSettingsPanelProps {
   settings: LedgerSettings;
+  rates?: LiveRatesPayload | null;
   onSaveSettings: (nextSettings: LedgerSettings) => Promise<void>;
   saving?: boolean;
 }
 
 export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
   settings,
+  rates = null,
   onSaveSettings,
   saving = false,
 }) => {
@@ -290,6 +292,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
             {foreignCurrencies.map((code) => {
               const meta = getCurrencyMeta(code, draft.customCurrencyNames);
               const currentCash = draft.cashRates?.[code] ?? 0;
+              const visaRef = rates?.ratesToTwd?.[code] ?? draft.visaRates?.[code];
               return (
                 <div
                   key={code}
@@ -311,6 +314,11 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
                     compact
                     ariaLabel={`${code} 現金固定匯率`}
                   />
+                  {visaRef && visaRef > 0 ? (
+                    <div className="display-yellow-soft rounded-lg px-2.5 py-1 text-[11px] font-mono-num">
+                      VISA 即時參考：1 {code} = {visaRef.toFixed(4)} TWD
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

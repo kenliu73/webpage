@@ -9,6 +9,7 @@ import type {
   RegisteredPasskeyInfo,
   TravelLedger,
 } from '../types';
+import { calculateExpenseTwd } from './calculations';
 
 const STATIC_LEDGERS_KEY = 'triple_static_ledgers_v1';
 const STATIC_AUTH_KEY = 'triple_static_auth_v1';
@@ -308,7 +309,9 @@ export async function staticFetchLiveRates(): Promise<LiveRatesPayload> {
   let rateDate = new Date().toISOString().slice(0, 10);
 
   try {
-    const resp = await fetch('https://open.er-api.com/v6/latest/TWD');
+    const resp = await fetch('https://open.er-api.com/v6/latest/TWD', {
+      cache: 'no-store',
+    });
     if (resp.ok) {
       const json = (await resp.json()) as {
         result?: string;
@@ -341,6 +344,71 @@ export async function staticFetchLiveRates(): Promise<LiveRatesPayload> {
     fetchedAt: Date.now(),
     rateDate,
   };
+}
+
+export function staticApplyVisaRates(
+  code: string,
+  liveRates: LiveRatesPayload
+): { ledger: TravelLedger; updatedExpenseCount: number } {
+  const map = loadStaticLedgersMap();
+  const current = map[code] || createDefaultLedger(code, false);
+  const nextVisaRates: Record<string, number> = { ...(current.settings.visaRates || {}) };
+
+  for (const curr of current.settings.currencies) {
+    if (curr === 'TWD') continue;
+    const rate = liveRates.ratesToTwd[curr];
+    if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) {
+      nextVisaRates[curr] = Number(rate.toFixed(6));
+    }
+  }
+
+  const now = Date.now();
+  let updatedExpenseCount = 0;
+  const nextExpenses = current.expenses.map((exp) => {
+    if (exp.paymentMethod !== 'credit_card' || exp.currency === 'TWD') {
+      return exp;
+    }
+    const nextRate = liveRates.ratesToTwd[exp.currency] ?? nextVisaRates[exp.currency];
+    if (!nextRate || !Number.isFinite(nextRate) || nextRate <= 0) {
+      return exp;
+    }
+    const calc = calculateExpenseTwd({
+      currency: exp.currency,
+      originalAmount: exp.originalAmount,
+      paymentMethod: 'credit_card',
+      exchangeRate: nextRate,
+    });
+    updatedExpenseCount += 1;
+    return {
+      ...exp,
+      exchangeRate: calc.exchangeRate,
+      feeRate: 0.015,
+      feeTwd: calc.feeTwd,
+      totalTwd: calc.totalTwd,
+      rateSource: liveRates.visaDirectCurrencies.includes(exp.currency)
+        ? 'VISA 官方即時匯率'
+        : 'VISA即時匯率',
+      updatedAt: now,
+    };
+  });
+
+  const updated: TravelLedger = {
+    ...current,
+    version: current.version + 1,
+    updatedAt: now,
+    settings: {
+      ...current.settings,
+      visaRates: nextVisaRates,
+      visaRateSource: liveRates.source,
+      visaRateDate: liveRates.rateDate,
+      visaRateUpdatedAt: liveRates.fetchedAt,
+    },
+    expenses: nextExpenses,
+  };
+
+  map[code] = updated;
+  saveStaticLedgersMap(map);
+  return { ledger: updated, updatedExpenseCount };
 }
 
 // Static-mode browser auth helpers

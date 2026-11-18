@@ -568,6 +568,19 @@ function sanitizeSettings(input: Partial<LedgerSettings>, existing: LedgerSettin
     }
   }
 
+  const visaRates: Record<string, number> = { ...(existing.visaRates || {}) };
+  if (input.visaRates && typeof input.visaRates === 'object') {
+    for (const [k, v] of Object.entries(input.visaRates)) {
+      const code = normalizeCurrencyCode(k);
+      if (code && code !== 'TWD') {
+        const num = Number(v);
+        if (Number.isFinite(num) && num > 0) {
+          visaRates[code] = Number(num.toFixed(6));
+        }
+      }
+    }
+  }
+
   return {
     tripName:
       typeof input.tripName === 'string' && input.tripName.trim()
@@ -579,6 +592,15 @@ function sanitizeSettings(input: Partial<LedgerSettings>, existing: LedgerSettin
     currencies: unique,
     customCurrencyNames,
     cashRates,
+    visaRates,
+    visaRateSource:
+      typeof input.visaRateSource === 'string' ? input.visaRateSource : existing.visaRateSource,
+    visaRateDate:
+      typeof input.visaRateDate === 'string' ? input.visaRateDate : existing.visaRateDate,
+    visaRateUpdatedAt:
+      typeof input.visaRateUpdatedAt === 'number'
+        ? input.visaRateUpdatedAt
+        : existing.visaRateUpdatedAt,
   };
 }
 
@@ -1238,6 +1260,72 @@ async function startServer() {
     persistLedgersToDisk();
     broadcastLedgerUpdate(updated);
     res.json(updated);
+  });
+
+  // Fetch fresh VISA rates for the ledger's selected currencies and apply them to the ledger
+  app.post('/api/ledgers/:code/apply-visa-rates', async (req, res) => {
+    const code = normalizeCode(req.params.code);
+    let ledger = ledgers.get(code);
+    if (!ledger) {
+      ledger = createDefaultLedger(code, false);
+    }
+
+    const freshRates = await fetchLiveRates(true, ledger.settings.currencies);
+    const nextVisaRates: Record<string, number> = { ...(ledger.settings.visaRates || {}) };
+    for (const curr of ledger.settings.currencies) {
+      if (curr === 'TWD') continue;
+      const rate = freshRates.ratesToTwd[curr];
+      if (typeof rate === 'number' && Number.isFinite(rate) && rate > 0) {
+        nextVisaRates[curr] = Number(rate.toFixed(6));
+      }
+    }
+
+    const now = Date.now();
+    let updatedExpenseCount = 0;
+    const nextExpenses = ledger.expenses.map((exp) => {
+      if (exp.paymentMethod !== 'credit_card' || exp.currency === 'TWD') {
+        return exp;
+      }
+      const nextRate = freshRates.ratesToTwd[exp.currency] ?? nextVisaRates[exp.currency];
+      if (!nextRate || !Number.isFinite(nextRate) || nextRate <= 0) {
+        return exp;
+      }
+      const baseTwd = Math.round(exp.originalAmount * nextRate);
+      const totalTwd = Math.round(exp.originalAmount * 1.015 * nextRate);
+      const feeTwd = Math.max(0, totalTwd - baseTwd);
+      const nextSource = freshRates.visaDirectCurrencies.includes(exp.currency)
+        ? 'VISA 官方即時匯率'
+        : 'VISA即時匯率';
+      updatedExpenseCount += 1;
+      return {
+        ...exp,
+        exchangeRate: nextRate,
+        feeRate: 0.015,
+        feeTwd,
+        totalTwd,
+        rateSource: nextSource,
+        updatedAt: now,
+      };
+    });
+
+    const updated: TravelLedger = {
+      ...ledger,
+      version: ledger.version + 1,
+      updatedAt: now,
+      settings: {
+        ...ledger.settings,
+        visaRates: nextVisaRates,
+        visaRateSource: freshRates.source,
+        visaRateDate: freshRates.rateDate,
+        visaRateUpdatedAt: freshRates.fetchedAt,
+      },
+      expenses: nextExpenses,
+    };
+
+    ledgers.set(code, updated);
+    persistLedgersToDisk();
+    broadcastLedgerUpdate(updated);
+    res.json({ ledger: updated, rates: freshRates, updatedExpenseCount });
   });
 
   // Replace / save budget items

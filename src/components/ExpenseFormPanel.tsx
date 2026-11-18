@@ -102,16 +102,21 @@ export const ExpenseFormPanel: React.FC<ExpenseFormPanelProps> = ({
 
   // Rate selection rule:
   // - TWD: 1
-  // - Foreign + Credit Card: automatically fetch VISA live rate
+  // - Foreign + Credit Card: automatically fetch VISA live rate (fallback to ledger's applied VISA rate)
   // - Foreign + Cash: strictly apply pre-configured manual cash rate from Tab 4 (TripSettingsPanel)
   const effectiveRate = useMemo(() => {
     if (currency === 'TWD') return 1;
     if (paymentMethod === 'credit_card') {
-      return rates?.ratesToTwd?.[currency] ?? currencyMeta.defaultFallbackRateToTwd ?? 1;
+      return (
+        rates?.ratesToTwd?.[currency] ??
+        settings.visaRates?.[currency] ??
+        currencyMeta.defaultFallbackRateToTwd ??
+        1
+      );
     }
     const configuredCashRate = settings.cashRates?.[currency];
     return configuredCashRate && configuredCashRate > 0 ? configuredCashRate : 0;
-  }, [currency, paymentMethod, rates, currencyMeta, settings.cashRates]);
+  }, [currency, paymentMethod, rates, settings.visaRates, currencyMeta, settings.cashRates]);
 
   const missingCashRate =
     currency !== 'TWD' && paymentMethod === 'cash' && (!effectiveRate || effectiveRate <= 0);
@@ -434,6 +439,27 @@ export const ExpenseFormPanel: React.FC<ExpenseFormPanelProps> = ({
             </div>
           </div>
         </div>
+
+        {availableCurrencies.some((c) => c !== 'TWD') && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 border-t border-yellow-400/40 dark:border-yellow-700/40 text-[11px]">
+            <span className="font-semibold opacity-80">本帳本所選外幣 VISA 匯率：</span>
+            {availableCurrencies
+              .filter((c) => c !== 'TWD')
+              .map((c) => {
+                const applied = rates?.ratesToTwd?.[c] ?? settings.visaRates?.[c];
+                return (
+                  <span key={c} className="font-mono-num font-semibold">
+                    1 {c} = {applied && applied > 0 ? `${applied.toFixed(4)} TWD` : '待更新'}
+                  </span>
+                );
+              })}
+            {(settings.visaRateDate || rates?.rateDate) && (
+              <span className="opacity-70 font-mono-num">
+                ({settings.visaRateDate || rates?.rateDate})
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Row 5: Optional Note & Submit */}

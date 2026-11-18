@@ -41,6 +41,10 @@ export interface LedgerSettings {
   currencies: CurrencyCode[];
   customCurrencyNames?: Record<string, string>;
   cashRates: Record<string, number>;
+  visaRates?: Record<string, number>;
+  visaRateSource?: string;
+  visaRateDate?: string;
+  visaRateUpdatedAt?: number;
 }
 
 export interface TravelLedger {
