@@ -670,26 +670,60 @@ export default function App() {
       </header>
 
       {/* Mobile Compact Top App Bar (48px height) */}
-      <header className="md:hidden sticky top-0 z-30 h-12 px-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-        <span className="font-display text-base font-bold truncate">
+      <header className="md:hidden sticky top-0 z-30 h-12 px-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1.5">
+        <span className="font-display text-sm font-bold truncate min-w-0">
           {ledger.settings.tripName}
         </span>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => fetchRates(true, ledger.settings.currencies)}
+            disabled={ratesLoading}
+            title="手動更新VISA匯率"
+            aria-label="手動更新VISA匯率"
+            className="control-green h-8 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${ratesLoading ? 'animate-spin' : ''}`} />
+            <span>匯率</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAuthModalOpen(true)}
+            title={authStatus.enabled ? '人臉驗證保護中' : '設定人臉驗證'}
+            aria-label={authStatus.enabled ? '人臉驗證保護中' : '設定人臉驗證'}
+            className={`h-8 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap ${
+              authStatus.enabled ? 'control-green-active' : 'control-green'
+            }`}
+          >
+            {authStatus.enabled ? (
+              <ShieldCheck className="w-3.5 h-3.5" />
+            ) : (
+              <ScanFace className="w-3.5 h-3.5" />
+            )}
+            <span>{authStatus.enabled ? '保護' : '驗證'}</span>
+          </button>
+
+          {authStatus.enabled && (
+            <button
+              type="button"
+              onClick={handleLockNow}
+              title="立即鎖定"
+              aria-label="立即鎖定"
+              className="control-green h-8 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>鎖定</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setNewTripModalOpen(true)}
-            className="control-green-active h-9 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+            className="control-green-active h-8 px-2 rounded-lg text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap"
           >
             <PlusCircle className="w-3.5 h-3.5" />
             <span>新旅行</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setDarkMode((d) => !d)}
-            aria-label="切換日夜間模式"
-            className="control-green h-9 w-9 rounded-lg flex items-center justify-center"
-          >
-            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
         </div>
       </header>
@@ -723,15 +757,6 @@ export default function App() {
                   ))
                 )}
               </select>
-
-              <button
-                type="button"
-                onClick={() => setNewTripModalOpen(true)}
-                className="md:hidden control-green h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>開新帳本</span>
-              </button>
 
               {tripList.length > 1 && (
                 confirmDeleteTrip ? (
@@ -781,8 +806,8 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Day / Night Mode Toggle */}
+            <div className="hidden md:flex flex-wrap items-center gap-2">
+              {/* Day / Night Mode Toggle (Desktop only) */}
               <button
                 type="button"
                 onClick={() => setDarkMode((d) => !d)}
@@ -831,7 +856,7 @@ export default function App() {
               )}
             </div>
 
-            <span className="text-xs text-slate-500 dark:text-slate-400 ml-auto whitespace-nowrap">
+            <span className="text-xs text-slate-500 dark:text-slate-400 md:ml-auto whitespace-nowrap">
               {staticMode
                 ? `靜態網頁模式（已儲存 ${tripList.length} 本旅行帳本 · 本機儲存）`
                 : sseConnected
