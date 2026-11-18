@@ -670,10 +670,10 @@ export default function App() {
         </div>
       </header>
 
-      {/* Mobile Compact Top App Bar (56px height, permanently pinned at top) */}
-      <header className="md:hidden shrink-0 relative z-30 h-14 px-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2.5">
+      {/* Mobile Compact Top App Bar (permanently pinned at top, safe-area & roomy text) */}
+      <header className="md:hidden shrink-0 relative z-30 min-h-16 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 px-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2.5">
         {confirmDeleteTrip && tripList.length > 1 ? (
-          <div className="absolute inset-0 z-10 px-3 bg-white dark:bg-slate-900 flex items-center justify-between gap-2">
+          <div className="absolute inset-0 z-10 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 px-3 bg-white dark:bg-slate-900 flex items-center justify-between gap-2">
             <span className="text-xs font-bold text-rose-700 dark:text-rose-300 truncate min-w-0">
               確定刪除「{ledger.settings.tripName}」？
             </span>
@@ -681,14 +681,14 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleDeleteCurrentTrip}
-                className="h-11 px-3 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 whitespace-nowrap"
+                className="h-12 px-3 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 whitespace-nowrap"
               >
                 確定刪除
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDeleteTrip(false)}
-                className="control-green h-11 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+                className="control-green h-12 px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
               >
                 取消
               </button>
@@ -703,7 +703,7 @@ export default function App() {
               onClick={() => setConfirmDeleteTrip(true)}
               title="刪除選取帳本"
               aria-label="刪除選取帳本"
-              className="control-green h-11 w-11 rounded-lg flex items-center justify-center shrink-0 text-rose-700 dark:text-rose-300"
+              className="control-green h-12 w-11 rounded-lg flex items-center justify-center shrink-0 text-rose-700 dark:text-rose-300"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -716,7 +716,7 @@ export default function App() {
               setConfirmDeleteTrip(false);
               handleSelectTrip(e.target.value);
             }}
-            className="input-green h-11 pl-2.5 pr-1 rounded-lg text-sm font-semibold cursor-pointer min-w-0 flex-1 truncate"
+            className="input-green h-12 pl-2.5 pr-1 rounded-lg text-sm leading-normal font-semibold cursor-pointer min-w-0 flex-1"
           >
             {tripList.length === 0 ? (
               <option value={ledger.code}>{ledger.settings.tripName}</option>
@@ -737,7 +737,7 @@ export default function App() {
             disabled={ratesLoading}
             title="手動更新VISA匯率"
             aria-label="手動更新VISA匯率"
-            className="control-green h-11 min-w-[42px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
+            className="control-green h-12 min-w-[44px] px-1.5 rounded-lg text-[11px] leading-tight font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
           >
             <RefreshCw className={`w-4 h-4 shrink-0 ${ratesLoading ? 'animate-spin' : ''}`} />
             <span>匯率</span>
@@ -748,7 +748,7 @@ export default function App() {
             onClick={() => setAuthModalOpen(true)}
             title={authStatus.enabled ? '人臉驗證保護中' : '設定人臉驗證'}
             aria-label={authStatus.enabled ? '人臉驗證保護中' : '設定人臉驗證'}
-            className={`h-11 min-w-[42px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap ${
+            className={`h-12 min-w-[44px] px-1.5 rounded-lg text-[11px] leading-tight font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap ${
               authStatus.enabled ? 'control-green-active' : 'control-green'
             }`}
           >
@@ -766,7 +766,7 @@ export default function App() {
               onClick={handleLockNow}
               title="立即鎖定"
               aria-label="立即鎖定"
-              className="control-green h-11 min-w-[42px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
+              className="control-green h-12 min-w-[44px] px-1.5 rounded-lg text-[11px] leading-tight font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
             >
               <Lock className="w-4 h-4 shrink-0" />
               <span>鎖定</span>
@@ -776,7 +776,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setNewTripModalOpen(true)}
-            className="control-green-active h-11 min-w-[46px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
+            className="control-green-active h-12 min-w-[48px] px-1.5 rounded-lg text-[11px] leading-tight font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
           >
             <PlusCircle className="w-4 h-4 shrink-0" />
             <span>新旅行</span>
