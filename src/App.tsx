@@ -96,6 +96,7 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
 
   const formSectionRef = useRef<HTMLElement>(null);
+  const mainScrollRef = useRef<HTMLElement>(null);
 
   const isJsonResponse = (resp: Response) =>
     (resp.headers.get('content-type') || '').toLowerCase().includes('application/json');
@@ -630,7 +631,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 pb-20 md:pb-12">
+    <div className="h-[100dvh] flex flex-col overflow-hidden md:h-auto md:min-h-screen md:block md:overflow-visible bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 md:pb-12">
       {/* Desktop Top Bar: Strict 3-Zone Contract with 4 Tabs */}
       <header className="hidden md:block sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
@@ -669,11 +670,66 @@ export default function App() {
         </div>
       </header>
 
-      {/* Mobile Compact Top App Bar (48px height) */}
-      <header className="md:hidden sticky top-0 z-30 h-12 px-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1.5">
-        <span className="font-display text-sm font-bold truncate min-w-0">
-          {ledger.settings.tripName}
-        </span>
+      {/* Mobile Compact Top App Bar (48px height, permanently pinned at top) */}
+      <header className="md:hidden shrink-0 relative z-30 h-12 px-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1">
+        {confirmDeleteTrip && tripList.length > 1 ? (
+          <div className="absolute inset-0 z-10 px-3 bg-white dark:bg-slate-900 flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-rose-700 dark:text-rose-300 truncate min-w-0">
+              確定刪除「{ledger.settings.tripName}」？
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleDeleteCurrentTrip}
+                className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 whitespace-nowrap"
+              >
+                確定刪除
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteTrip(false)}
+                className="control-green h-8 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-1 min-w-0 flex-1">
+          <select
+            aria-label="選擇旅行帳本"
+            value={tripCode}
+            onChange={(e) => {
+              setConfirmDeleteTrip(false);
+              handleSelectTrip(e.target.value);
+            }}
+            className="input-green h-8 px-1.5 rounded-lg text-xs font-bold cursor-pointer min-w-0 flex-1 truncate"
+          >
+            {tripList.length === 0 ? (
+              <option value={ledger.code}>{ledger.settings.tripName}</option>
+            ) : (
+              tripList.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.tripName}
+                </option>
+              ))
+            )}
+          </select>
+
+          {tripList.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteTrip(true)}
+              title="刪除選取帳本"
+              aria-label="刪除選取帳本"
+              className="control-green h-8 w-7 rounded-lg flex items-center justify-center shrink-0 text-rose-700 dark:text-rose-300"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -720,7 +776,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setNewTripModalOpen(true)}
-            className="control-green-active h-8 px-2 rounded-lg text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap"
+            className="control-green-active h-8 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap"
           >
             <PlusCircle className="w-3.5 h-3.5" />
             <span>新旅行</span>
@@ -729,12 +785,16 @@ export default function App() {
       </header>
 
       {/* Main Content Container */}
-      <main id="top" className="max-w-7xl mx-auto px-4 sm:px-6 pt-3 space-y-4">
-        {/* Compact Workspace Toolbar: Trip Switcher + Metadata + Action Row */}
+      <main
+        ref={mainScrollRef}
+        id="top"
+        className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 pb-4 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:overflow-visible md:pb-0"
+      >
+        {/* Compact Workspace Toolbar: Trip Switcher (Desktop) + Metadata + Action Row */}
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 sm:px-5 sm:py-3.5 space-y-2.5">
           <div className="space-y-1.5 min-w-0">
-            {/* Trip Bookshelf Switcher */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Desktop Trip Bookshelf Switcher (Hidden on mobile, moved to mobile top bar) */}
+            <div className="hidden md:flex flex-wrap items-center gap-2">
               <label
                 htmlFor="trip-switcher"
                 className="text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap"
@@ -1042,10 +1102,10 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Fixed Bottom Navigation Bar (4 Exact Tabs) */}
+      {/* Mobile Permanently Pinned Bottom Navigation Bar (4 Exact Tabs) */}
       <nav
         aria-label="行動版主要導覽"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-4"
+        className="md:hidden shrink-0 z-40 min-h-14 pb-[env(safe-area-inset-bottom)] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-4"
       >
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
@@ -1053,8 +1113,11 @@ export default function App() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold ${
+              onClick={() => {
+                setActiveTab(tab.id);
+                mainScrollRef.current?.scrollTo({ top: 0 });
+              }}
+              className={`h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold ${
                 active
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-slate-500 dark:text-slate-400'
