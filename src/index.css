@@ -11,6 +11,22 @@
   html {
     font-family: var(--font-sans);
     scroll-behavior: smooth;
+    touch-action: manipulation;
+  }
+
+  body,
+  button,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  @media (max-width: 767px) {
+    html,
+    body {
+      overscroll-behavior: none;
+    }
   }
 
   h1, h2, h3, .font-display {
@@ -35,6 +51,14 @@
          dark:placeholder:text-emerald-300/45
          dark:hover:border-emerald-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-400/25
          transition-colors duration-150;
+}
+
+@media (max-width: 767px) {
+  input.input-green,
+  select.input-green,
+  textarea.input-green {
+    font-size: 1rem;
+  }
 }
 
 .control-green {

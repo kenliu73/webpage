@@ -111,13 +111,37 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
   };
 
   const appendToken = (token: string) => {
+    const isOperator = ['+', '-', '×', '÷'].includes(token);
     setExpr((prev) => {
-      // Auto-replace leading single zero unless adding operator or decimal
-      if (prev === '0' && /^[0-9]$/.test(token)) {
-        return token;
+      if (isOperator) {
+        if (!prev) return prev;
+        const base = prev.endsWith('.') ? prev.slice(0, -1) : prev;
+        if (!base) return '';
+        if (/[+\-×÷]$/.test(base)) {
+          return base.replace(/[+\-×÷]+$/, token);
+        }
+        return base + token;
       }
-      if (!allowDecimal && token === '.') return prev;
-      return prev + token;
+
+      if (token === '.') {
+        if (!allowDecimal) return prev;
+        if (!prev || /[+\-×÷]$/.test(prev)) {
+          return `${prev}0.`;
+        }
+        const currentSegment = prev.split(/[+\-×÷]/).pop() || '';
+        if (currentSegment.includes('.')) return prev;
+        return `${prev}.`;
+      }
+
+      if (/^[0-9]$/.test(token)) {
+        if (prev === '0') return token;
+        if (/[+\-×÷]0$/.test(prev)) {
+          return `${prev.slice(0, -1)}${token}`;
+        }
+        return prev + token;
+      }
+
+      return prev;
     });
   };
 
@@ -172,7 +196,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
             onChange={handleInputChange}
             className={`input-green w-full rounded-lg font-mono-num font-semibold text-right ${
               prefix ? 'pl-11 pr-3' : 'px-3'
-            } ${compact ? 'h-10 text-sm' : 'h-11 text-base'}`}
+            } ${compact ? 'h-10 text-base sm:text-sm' : 'h-11 text-base'}`}
           />
         </div>
 
@@ -181,7 +205,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
           onClick={openCalculator}
           title="開啟計算機輸入"
           aria-label="開啟計算機輸入"
-          className={`control-green shrink-0 rounded-lg flex items-center justify-center gap-1.5 font-medium ${
+          className={`control-green shrink-0 rounded-lg flex items-center justify-center gap-1.5 font-medium touch-manipulation select-none ${
             compact ? 'h-10 px-2.5 text-xs' : 'h-11 px-3 text-sm'
           } ${calcOpen ? 'ring-2 ring-emerald-500/50' : ''}`}
         >
@@ -200,7 +224,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
           <div
             className="fixed inset-x-3 bottom-4 z-50 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72
                        rounded-2xl border border-slate-200 dark:border-slate-700
-                       bg-white dark:bg-slate-900 shadow-2xl p-3.5"
+                       bg-white dark:bg-slate-900 shadow-2xl p-3.5 touch-manipulation select-none"
           >
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -209,7 +233,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
               <button
                 type="button"
                 onClick={() => setCalcOpen(false)}
-                className="control-green h-8 w-8 rounded-lg flex items-center justify-center"
+                className="control-green h-8 w-8 rounded-lg flex items-center justify-center touch-manipulation select-none"
                 aria-label="關閉計算機"
               >
                 <X className="w-4 h-4" />
@@ -230,7 +254,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5 touch-manipulation">
               {calcButtons.flat().map((btn) => {
                 if (btn === '⌫') {
                   return (
@@ -238,7 +262,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
                       key="backspace"
                       type="button"
                       onClick={() => setExpr((p) => p.slice(0, -1))}
-                      className="control-green h-11 rounded-lg flex items-center justify-center font-semibold"
+                      className="control-green h-11 rounded-lg flex items-center justify-center font-semibold touch-manipulation select-none"
                       aria-label="退格"
                     >
                       <Delete className="w-4 h-4" />
@@ -251,7 +275,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
                     key={btn}
                     type="button"
                     onClick={() => appendToken(btn)}
-                    className={`control-green h-11 rounded-lg font-mono-num text-base font-semibold flex items-center justify-center ${
+                    className={`control-green h-11 rounded-lg font-mono-num text-base font-semibold flex items-center justify-center touch-manipulation select-none ${
                       isOp ? 'font-bold' : ''
                     }`}
                   >
@@ -261,25 +285,25 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
               })}
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 mt-2">
+            <div className="grid grid-cols-3 gap-1.5 mt-2 touch-manipulation">
               <button
                 type="button"
                 onClick={() => setExpr('')}
-                className="control-green h-11 rounded-lg text-sm font-semibold"
+                className="control-green h-11 rounded-lg text-sm font-semibold touch-manipulation select-none"
               >
                 清除 C
               </button>
               <button
                 type="button"
                 onClick={handleEvaluate}
-                className="control-green h-11 rounded-lg font-mono-num text-base font-bold"
+                className="control-green h-11 rounded-lg font-mono-num text-base font-bold touch-manipulation select-none"
               >
                 =
               </button>
               <button
                 type="button"
                 onClick={handleApplyCalculator}
-                className="control-green-active h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-1"
+                className="control-green-active h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-1 touch-manipulation select-none"
               >
                 <Check className="w-4 h-4" />
                 <span>套用</span>

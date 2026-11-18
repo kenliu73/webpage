@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Plus, Check, Lock } from 'lucide-react';
 import type { CurrencyCode, LedgerSettings } from '../types';
 import { CURRENCY_CATALOG } from '../constants/currencies';
@@ -24,6 +24,19 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [customCode, setCustomCode] = useState('');
   const [customName, setCustomName] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      const currentToday = new Date().toISOString().slice(0, 10);
+      setTripName('');
+      setStartDate(currentToday);
+      setEndDate(addDaysToDateString(currentToday, 4));
+      setCurrencies(['TWD']);
+      setCustomCurrencyNames({});
+      setCustomCode('');
+      setCustomName('');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -113,7 +126,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 onChange={(e) => setTripName(e.target.value)}
                 placeholder="例如：2027 北海道雪祭七日行"
                 required
-                className="input-green w-full h-11 px-3 rounded-lg text-sm font-semibold"
+                className="input-green w-full h-11 px-3 rounded-lg text-base sm:text-sm font-semibold"
               />
             </div>
 
@@ -125,7 +138,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 type="date"
                 value={startDate}
                 onChange={(e) => handleStartChange(e.target.value)}
-                className="input-green w-full h-11 px-3 rounded-lg text-sm font-mono-num"
+                className="input-green w-full h-11 px-3 rounded-lg text-base sm:text-sm font-mono-num"
               />
             </div>
 
@@ -138,7 +151,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 value={endDate}
                 min={startDate}
                 onChange={(e) => handleEndChange(e.target.value)}
-                className="input-green w-full h-11 px-3 rounded-lg text-sm font-mono-num"
+                className="input-green w-full h-11 px-3 rounded-lg text-base sm:text-sm font-mono-num"
               />
             </div>
           </div>
@@ -199,14 +212,14 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 onChange={(e) => setCustomCode(e.target.value.toUpperCase())}
                 placeholder="自訂如 NZD"
                 maxLength={8}
-                className="input-green h-10 px-2.5 rounded-lg text-xs font-mono-num uppercase"
+                className="input-green h-10 px-2.5 rounded-lg text-base sm:text-xs font-mono-num uppercase"
               />
               <input
                 type="text"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 placeholder="名稱（選填）"
-                className="input-green h-10 px-2.5 rounded-lg text-xs"
+                className="input-green h-10 px-2.5 rounded-lg text-base sm:text-xs"
               />
               <button
                 type="button"

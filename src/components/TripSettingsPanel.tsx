@@ -145,7 +145,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
             value={draft.tripName}
             onChange={(e) => setDraft({ ...draft, tripName: e.target.value })}
             placeholder="例如：2026 東京五日自由行"
-            className="input-green w-full h-11 px-3 rounded-lg text-sm font-semibold"
+            className="input-green w-full h-11 px-3 rounded-lg text-base sm:text-sm font-semibold"
           />
         </div>
 
@@ -157,7 +157,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
             type="date"
             value={draft.startDate}
             onChange={(e) => handleStartDateChange(e.target.value)}
-            className="input-green w-full h-11 px-3 rounded-lg text-sm font-mono-num"
+            className="input-green w-full h-11 px-3 rounded-lg text-base sm:text-sm font-mono-num"
           />
         </div>
 
@@ -170,7 +170,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
             value={currentEndDate}
             min={draft.startDate}
             onChange={(e) => handleEndDateChange(e.target.value)}
-            className="input-green w-full h-11 px-3 rounded-lg text-sm font-mono-num"
+            className="input-green w-full h-11 px-3 rounded-lg text-base sm:text-sm font-mono-num"
           />
         </div>
       </div>
@@ -247,7 +247,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
               onChange={(e) => setCustomCode(e.target.value.toUpperCase())}
               placeholder="代碼如 NZD, PHP"
               maxLength={8}
-              className="input-green h-11 px-3 rounded-lg text-sm font-mono-num uppercase"
+              className="input-green h-11 px-3 rounded-lg text-base sm:text-sm font-mono-num uppercase"
             />
             <input
               type="text"
@@ -255,7 +255,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
               onChange={(e) => setCustomName(e.target.value)}
               placeholder="貨幣名稱（選填，如：紐西蘭幣、菲律賓披索）"
               maxLength={24}
-              className="input-green h-11 px-3 rounded-lg text-sm"
+              className="input-green h-11 px-3 rounded-lg text-base sm:text-sm"
             />
             <button
               type="button"

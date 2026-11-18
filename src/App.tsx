@@ -97,9 +97,47 @@ export default function App() {
 
   const formSectionRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLElement>(null);
+  const [mobileViewport, setMobileViewport] = useState<{ top: number; height: number } | null>(null);
 
   const isJsonResponse = (resp: Response) =>
     (resp.headers.get('content-type') || '').toLowerCase().includes('application/json');
+
+  // Keep mobile bottom 4-tab bar permanently pinned across iOS/Android virtual keyboard open/close
+  useEffect(() => {
+    const syncViewport = () => {
+      if (window.innerWidth >= 768) {
+        setMobileViewport(null);
+        return;
+      }
+      const vv = window.visualViewport;
+      if (vv) {
+        setMobileViewport({ top: vv.offsetTop, height: vv.height });
+      } else {
+        setMobileViewport(null);
+      }
+    };
+
+    const handleFocusOut = () => {
+      if (window.innerWidth < 768) {
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          syncViewport();
+        }, 60);
+      }
+    };
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+    window.addEventListener('focusout', handleFocusOut);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+      window.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
 
   // Apply .dark class to <html>
   useEffect(() => {
@@ -344,6 +382,10 @@ export default function App() {
       setScopeFilter('all');
       await fetchTripList();
       await fetchRates(true, created.settings.currencies);
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        window.scrollTo(0, 0);
+        mainScrollRef.current?.scrollTo({ top: 0 });
+      }
       return;
     }
     const resp = await authFetch('/api/ledgers', {
@@ -364,6 +406,10 @@ export default function App() {
       setScopeFilter('all');
       await fetchTripList();
       await fetchRates(true, created.settings.currencies);
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        window.scrollTo(0, 0);
+        mainScrollRef.current?.scrollTo({ top: 0 });
+      }
     }
   };
 
@@ -425,6 +471,9 @@ export default function App() {
       }
     } finally {
       setSavingSettings(false);
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        window.scrollTo(0, 0);
+      }
     }
   };
 
@@ -631,7 +680,14 @@ export default function App() {
   ];
 
   return (
-    <div className="h-[100dvh] flex flex-col overflow-hidden md:h-auto md:min-h-screen md:block md:overflow-visible bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 md:pb-12">
+    <div
+      style={
+        mobileViewport
+          ? { top: `${mobileViewport.top}px`, height: `${mobileViewport.height}px`, bottom: 'auto' }
+          : undefined
+      }
+      className="fixed inset-0 flex flex-col overflow-hidden md:!static md:!inset-auto md:!top-auto md:!h-auto md:min-h-screen md:block md:overflow-visible bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 md:pb-12"
+    >
       {/* Desktop Top Bar: Strict 3-Zone Contract with 4 Tabs */}
       <header className="hidden md:block sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
@@ -716,7 +772,7 @@ export default function App() {
               setConfirmDeleteTrip(false);
               handleSelectTrip(e.target.value);
             }}
-            className="input-green h-12 pl-2.5 pr-1 rounded-lg text-sm leading-normal font-semibold cursor-pointer min-w-0 flex-1"
+            className="input-green h-12 pl-2.5 pr-1 rounded-lg text-base sm:text-sm leading-normal font-semibold cursor-pointer min-w-0 flex-1"
           >
             {tripList.length === 0 ? (
               <option value={ledger.code}>{ledger.settings.tripName}</option>
