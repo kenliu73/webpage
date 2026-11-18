@@ -704,7 +704,7 @@ export default function App() {
               setConfirmDeleteTrip(false);
               handleSelectTrip(e.target.value);
             }}
-            className="input-green h-8 px-1.5 rounded-lg text-xs font-bold cursor-pointer min-w-0 flex-1 truncate"
+            className="input-green h-8 px-1.5 rounded-lg text-[11px] font-bold cursor-pointer min-w-0 flex-1 max-w-[130px] sm:max-w-[210px] truncate"
           >
             {tripList.length === 0 ? (
               <option value={ledger.code}>{ledger.settings.tripName}</option>
@@ -790,14 +790,14 @@ export default function App() {
         id="top"
         className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 pb-4 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:overflow-visible md:pb-0"
       >
-        {/* Compact Workspace Toolbar: Trip Switcher (Desktop) + Metadata + Action Row */}
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 sm:px-5 sm:py-3.5 space-y-2.5">
+        {/* Compact Workspace Toolbar: Desktop Only (Hidden on mobile per request) */}
+        <section className="hidden md:block rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 sm:px-5 sm:py-3.5 space-y-2.5">
           <div className="space-y-1.5 min-w-0">
-            {/* Desktop Trip Bookshelf Switcher (Hidden on mobile, moved to mobile top bar) */}
-            <div className="hidden md:flex flex-wrap items-center gap-2">
+            {/* Desktop Trip Bookshelf Switcher */}
+            <div className="flex items-center gap-2 min-w-0">
               <label
                 htmlFor="trip-switcher"
-                className="text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap"
+                className="text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap shrink-0"
               >
                 目前旅行帳本：
               </label>
@@ -805,7 +805,7 @@ export default function App() {
                 id="trip-switcher"
                 value={tripCode}
                 onChange={(e) => handleSelectTrip(e.target.value)}
-                className="input-green h-9 px-3 rounded-lg text-sm font-bold cursor-pointer max-w-full"
+                className="input-green h-9 px-3 rounded-lg text-sm font-bold cursor-pointer min-w-0 max-w-[260px] lg:max-w-md"
               >
                 {tripList.length === 0 ? (
                   <option value={ledger.code}>{ledger.settings.tripName}</option>
