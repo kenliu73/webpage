@@ -703,7 +703,7 @@ export default function App() {
               onClick={() => setConfirmDeleteTrip(true)}
               title="刪除選取帳本"
               aria-label="刪除選取帳本"
-              className="control-green h-11 w-9 rounded-lg flex items-center justify-center shrink-0 text-rose-700 dark:text-rose-300"
+              className="control-green h-11 w-11 rounded-lg flex items-center justify-center shrink-0 text-rose-700 dark:text-rose-300"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -716,7 +716,7 @@ export default function App() {
               setConfirmDeleteTrip(false);
               handleSelectTrip(e.target.value);
             }}
-            className="input-green h-11 pl-2 pr-1 rounded-lg text-xs sm:text-sm font-semibold cursor-pointer min-w-0 flex-1 truncate"
+            className="input-green h-11 pl-2.5 pr-1 rounded-lg text-sm font-semibold cursor-pointer min-w-0 flex-1 truncate"
           >
             {tripList.length === 0 ? (
               <option value={ledger.code}>{ledger.settings.tripName}</option>
@@ -737,9 +737,9 @@ export default function App() {
             disabled={ratesLoading}
             title="手動更新VISA匯率"
             aria-label="手動更新VISA匯率"
-            className="control-green h-11 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap"
+            className="control-green h-11 min-w-[42px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
           >
-            <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${ratesLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 shrink-0 ${ratesLoading ? 'animate-spin' : ''}`} />
             <span>匯率</span>
           </button>
 
@@ -748,14 +748,14 @@ export default function App() {
             onClick={() => setAuthModalOpen(true)}
             title={authStatus.enabled ? '人臉驗證保護中' : '設定人臉驗證'}
             aria-label={authStatus.enabled ? '人臉驗證保護中' : '設定人臉驗證'}
-            className={`h-11 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap ${
+            className={`h-11 min-w-[42px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap ${
               authStatus.enabled ? 'control-green-active' : 'control-green'
             }`}
           >
             {authStatus.enabled ? (
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <ShieldCheck className="w-4 h-4 shrink-0" />
             ) : (
-              <ScanFace className="w-3.5 h-3.5 shrink-0" />
+              <ScanFace className="w-4 h-4 shrink-0" />
             )}
             <span>{authStatus.enabled ? '保護' : '驗證'}</span>
           </button>
@@ -766,9 +766,9 @@ export default function App() {
               onClick={handleLockNow}
               title="立即鎖定"
               aria-label="立即鎖定"
-              className="control-green h-11 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap"
+              className="control-green h-11 min-w-[42px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
             >
-              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <Lock className="w-4 h-4 shrink-0" />
               <span>鎖定</span>
             </button>
           )}
@@ -776,9 +776,9 @@ export default function App() {
           <button
             type="button"
             onClick={() => setNewTripModalOpen(true)}
-            className="control-green-active h-11 px-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-0.5 whitespace-nowrap"
+            className="control-green-active h-11 min-w-[46px] px-1.5 rounded-lg text-[11px] leading-none font-semibold flex flex-col items-center justify-center gap-1 whitespace-nowrap"
           >
-            <PlusCircle className="w-3.5 h-3.5 shrink-0" />
+            <PlusCircle className="w-4 h-4 shrink-0" />
             <span>新旅行</span>
           </button>
         </div>
