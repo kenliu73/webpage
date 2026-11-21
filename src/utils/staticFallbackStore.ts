@@ -13,8 +13,14 @@ import { calculateExpenseTwd } from './calculations';
 import { sanitizeImportedLedgerClient } from './ledgerBackup';
 
 const STATIC_LEDGERS_KEY = 'triple_static_ledgers_v1';
+const STATIC_TOMBSTONES_KEY = 'triple_static_tombstones_v1';
 const STATIC_AUTH_KEY = 'triple_static_auth_v1';
 const STATIC_SESSION_KEY = 'triple_static_session_unlocked';
+
+export interface StaticTombstones {
+  deletedLedgers: Record<string, number>;
+  deletedExpenses: Record<string, number>;
+}
 
 const FALLBACK_RATES_TO_TWD: Record<string, number> = {
   TWD: 1,
@@ -177,6 +183,60 @@ function saveStaticLedgersMap(map: Record<string, TravelLedger>) {
   }
 }
 
+export function loadStaticTombstones(): StaticTombstones {
+  try {
+    const raw = localStorage.getItem(STATIC_TOMBSTONES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StaticTombstones>;
+      return {
+        deletedLedgers:
+          parsed.deletedLedgers && typeof parsed.deletedLedgers === 'object'
+            ? parsed.deletedLedgers
+            : {},
+        deletedExpenses:
+          parsed.deletedExpenses && typeof parsed.deletedExpenses === 'object'
+            ? parsed.deletedExpenses
+            : {},
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { deletedLedgers: {}, deletedExpenses: {} };
+}
+
+export function saveStaticTombstones(tombstones: StaticTombstones) {
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const prunedLedgers: Record<string, number> = {};
+  for (const [k, ts] of Object.entries(tombstones.deletedLedgers)) {
+    if (typeof ts === 'number' && ts >= cutoff) prunedLedgers[k] = ts;
+  }
+  const prunedExpenses: Record<string, number> = {};
+  for (const [k, ts] of Object.entries(tombstones.deletedExpenses)) {
+    if (typeof ts === 'number' && ts >= cutoff) prunedExpenses[k] = ts;
+  }
+  try {
+    localStorage.setItem(
+      STATIC_TOMBSTONES_KEY,
+      JSON.stringify({ deletedLedgers: prunedLedgers, deletedExpenses: prunedExpenses })
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export function getStaticLedgersMapRaw(): Record<string, TravelLedger> {
+  return loadStaticLedgersMap();
+}
+
+export function replaceStaticSyncState(
+  ledgersMap: Record<string, TravelLedger>,
+  tombstones: StaticTombstones
+) {
+  saveStaticLedgersMap(ledgersMap);
+  saveStaticTombstones(tombstones);
+}
+
 function toSummary(l: TravelLedger): LedgerSummary {
   return {
     code: l.code,
@@ -227,6 +287,11 @@ export function staticCreateLedger(settings: Partial<LedgerSettings>): TravelLed
   };
   map[code] = fresh;
   saveStaticLedgersMap(map);
+  const tombstones = loadStaticTombstones();
+  if (tombstones.deletedLedgers[code]) {
+    delete tombstones.deletedLedgers[code];
+    saveStaticTombstones(tombstones);
+  }
   return fresh;
 }
 
@@ -235,6 +300,9 @@ export function staticDeleteLedger(code: string): LedgerSummary[] {
   if (Object.keys(map).length > 1) {
     delete map[code];
     saveStaticLedgersMap(map);
+    const tombstones = loadStaticTombstones();
+    tombstones.deletedLedgers[code] = Date.now();
+    saveStaticTombstones(tombstones);
   }
   return staticGetLedgerSummaries();
 }
@@ -287,20 +355,32 @@ export function staticSaveExpense(code: string, expense: ExpenseRecord, isEdit: 
   };
   map[code] = updated;
   saveStaticLedgersMap(map);
+
+  const tombstones = loadStaticTombstones();
+  const expKey = `${code}:${cleanExp.id}`;
+  if (tombstones.deletedExpenses[expKey]) {
+    delete tombstones.deletedExpenses[expKey];
+    saveStaticTombstones(tombstones);
+  }
   return updated;
 }
 
 export function staticDeleteExpense(code: string, expenseId: string): TravelLedger {
   const map = loadStaticLedgersMap();
   const current = map[code] || createDefaultLedger(code, false);
+  const now = Date.now();
   const updated: TravelLedger = {
     ...current,
     version: current.version + 1,
-    updatedAt: Date.now(),
+    updatedAt: now,
     expenses: current.expenses.filter((e) => e.id !== expenseId),
   };
   map[code] = updated;
   saveStaticLedgersMap(map);
+
+  const tombstones = loadStaticTombstones();
+  tombstones.deletedExpenses[`${code}:${expenseId}`] = now;
+  saveStaticTombstones(tombstones);
   return updated;
 }
 

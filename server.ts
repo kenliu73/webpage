@@ -810,6 +810,22 @@ async function startServer() {
   app.set('trust proxy', true);
   app.use(express.json({ limit: '5mb' }));
 
+  app.use('/api', (req, res, next) => {
+    const origin = req.get('origin');
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   // Auth status & management endpoints
   app.get('/api/auth/status', (req, res) => {
     res.json(toAuthStatus(req));
