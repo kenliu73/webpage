@@ -808,7 +808,7 @@ async function startServer() {
 
   const app = express();
   app.set('trust proxy', true);
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '5mb' }));
 
   // Auth status & management endpoints
   app.get('/api/auth/status', (req, res) => {
@@ -1159,6 +1159,200 @@ async function startServer() {
     req.on('close', () => {
       clearInterval(heartbeat);
       listSseClients.delete(res);
+    });
+  });
+
+  // Export one or all trip ledgers as portable backup JSON
+  app.get('/api/ledgers/export', (req, res) => {
+    const rawCode = typeof req.query.code === 'string' ? req.query.code : '';
+    if (rawCode.trim()) {
+      const code = normalizeCode(rawCode);
+      const target = ledgers.get(code);
+      if (!target) {
+        res.status(404).json({ error: '找不到指定的旅行帳本' });
+        return;
+      }
+      res.json({
+        format: 'trip-ledger-backup',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        scope: 'single',
+        activeCode: target.code,
+        ledgers: [target],
+      });
+      return;
+    }
+
+    const allLedgers = Array.from(ledgers.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+    res.json({
+      format: 'trip-ledger-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      scope: 'all',
+      ledgers: allLedgers,
+    });
+  });
+
+  // Import one or multiple trip ledgers from backup JSON
+  app.post('/api/ledgers/import', (req, res) => {
+    const incomingList = Array.isArray(req.body?.ledgers)
+      ? (req.body.ledgers as Partial<TravelLedger>[])
+      : [];
+    const mode = req.body?.mode === 'create_new' ? 'create_new' : 'overwrite';
+
+    if (incomingList.length === 0) {
+      res.status(400).json({ error: '找不到可匯入的旅行帳本內容' });
+      return;
+    }
+
+    const generateUniqueCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      do {
+        code = `TRIP_${Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')}`;
+      } while (ledgers.has(code));
+      return code;
+    };
+
+    const now = Date.now();
+    const importedLedgers: TravelLedger[] = [];
+    let importedExpenseCount = 0;
+
+    for (const raw of incomingList.slice(0, 50)) {
+      if (!raw || typeof raw !== 'object' || !raw.settings) continue;
+
+      const requestedCode =
+        typeof raw.code === 'string' && raw.code.trim() ? normalizeCode(raw.code) : '';
+      const targetCode =
+        mode === 'create_new' || !requestedCode ? generateUniqueCode() : requestedCode;
+
+      const existing = ledgers.get(targetCode);
+      const base = existing || createDefaultLedger(targetCode, false);
+      const cleanSettings = sanitizeSettings(raw.settings || {}, base.settings);
+
+      const rawBudgets = Array.isArray(raw.budgets) ? raw.budgets : base.budgets;
+      const cleanBudgets: BudgetItem[] = rawBudgets
+        .filter((b) => b && typeof b.name === 'string' && b.name.trim())
+        .map((b, index) => ({
+          id:
+            typeof b.id === 'string' && b.id.trim()
+              ? b.id.trim().slice(0, 64)
+              : `b_imp_${index + 1}`,
+          name: b.name.trim().slice(0, 40),
+          budgetTwd: Math.max(0, Math.round(Number(b.budgetTwd) || 0)),
+          order: index,
+        }));
+
+      const rawExpenses = Array.isArray(raw.expenses) ? raw.expenses : [];
+      const cleanExpenses: ExpenseRecord[] = rawExpenses
+        .filter((e) => e && typeof e === 'object')
+        .map((e, index) => {
+          const currency = normalizeCurrencyCode(String(e.currency || 'TWD')) || 'TWD';
+          const paymentMethod = e.paymentMethod === 'cash' ? 'cash' : 'credit_card';
+          const phase = e.phase === 'pre_trip' ? 'pre_trip' : 'on_trip';
+          const originalAmount = Math.max(0, Number(e.originalAmount) || 0);
+          const exchangeRate = currency === 'TWD' ? 1 : Math.max(0, Number(e.exchangeRate) || 0);
+          const feeRate =
+            typeof e.feeRate === 'number' && Number.isFinite(e.feeRate)
+              ? Math.max(0, e.feeRate)
+              : currency !== 'TWD' && paymentMethod === 'credit_card'
+              ? 0.015
+              : 0;
+          const totalTwd = Math.max(
+            0,
+            Math.round(
+              typeof e.totalTwd === 'number' && Number.isFinite(e.totalTwd)
+                ? e.totalTwd
+                : originalAmount * (1 + feeRate) * exchangeRate
+            )
+          );
+          const feeTwd = Math.max(
+            0,
+            Math.round(
+              typeof e.feeTwd === 'number' && Number.isFinite(e.feeTwd)
+                ? e.feeTwd
+                : totalTwd - Math.round(originalAmount * exchangeRate)
+            )
+          );
+
+          return {
+            id:
+              typeof e.id === 'string' && e.id.trim()
+                ? e.id.trim().slice(0, 64)
+                : `exp_imp_${now.toString(36)}_${index}`,
+            title:
+              typeof e.title === 'string' && e.title.trim()
+                ? e.title.trim().slice(0, 80)
+                : '未命名消費',
+            categoryId:
+              typeof e.categoryId === 'string' && e.categoryId.trim()
+                ? e.categoryId.trim().slice(0, 64)
+                : cleanBudgets[0]?.id || 'b_misc',
+            phase,
+            dayNumber:
+              phase === 'on_trip'
+                ? Math.max(1, Math.round(Number(e.dayNumber) || 1))
+                : null,
+            expenseDate:
+              typeof e.expenseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.expenseDate)
+                ? e.expenseDate
+                : cleanSettings.startDate,
+            currency,
+            originalAmount,
+            paymentMethod,
+            exchangeRate,
+            feeRate,
+            feeTwd,
+            totalTwd,
+            rateSource:
+              typeof e.rateSource === 'string' && e.rateSource.trim()
+                ? e.rateSource.trim().slice(0, 60)
+                : currency === 'TWD'
+                ? '台幣本幣（無手續費）'
+                : paymentMethod === 'credit_card'
+                ? 'VISA即時匯率'
+                : '出國前現金固定匯率',
+            note: typeof e.note === 'string' ? e.note.trim().slice(0, 200) : '',
+            createdAt:
+              typeof e.createdAt === 'number' && Number.isFinite(e.createdAt)
+                ? e.createdAt
+                : now,
+            updatedAt:
+              typeof e.updatedAt === 'number' && Number.isFinite(e.updatedAt)
+                ? e.updatedAt
+                : now,
+          };
+        });
+
+      const savedLedger: TravelLedger = {
+        code: targetCode,
+        version: existing ? existing.version + 1 : 1,
+        updatedAt: now,
+        settings: cleanSettings,
+        budgets: cleanBudgets,
+        expenses: cleanExpenses,
+      };
+
+      ledgers.set(targetCode, savedLedger);
+      importedLedgers.push(savedLedger);
+      importedExpenseCount += cleanExpenses.length;
+    }
+
+    if (importedLedgers.length === 0) {
+      res.status(400).json({ error: '檔案中沒有有效的旅行帳本資料' });
+      return;
+    }
+
+    persistLedgersToDisk();
+    for (const item of importedLedgers) {
+      broadcastLedgerUpdate(item);
+    }
+
+    res.json({
+      importedCount: importedLedgers.length,
+      importedExpenseCount,
+      activeLedger: importedLedgers[0],
+      ledgers: getAllLedgerSummaries(),
     });
   });
 

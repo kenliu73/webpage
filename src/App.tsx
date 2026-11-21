@@ -14,12 +14,14 @@ import {
   Lock,
   CheckCircle2,
   X,
+  FolderSync,
 } from 'lucide-react';
 import type {
   AuthStatusPayload,
   BudgetItem,
   CurrencyCode,
   ExpenseRecord,
+  LedgerBackupFile,
   LedgerSettings,
   LedgerSummary,
   LiveRatesPayload,
@@ -28,15 +30,18 @@ import type {
 } from './types';
 import { formatCurrencyAmount, formatTwd } from './constants/currencies';
 import { authFetch, getSseAuthUrl, setStoredAuthToken } from './utils/authClient';
+import { buildBackupFile, downloadBackupFile } from './utils/ledgerBackup';
 import {
   staticApplyVisaRates,
   staticCreateLedger,
   staticDeleteExpense,
   staticDeleteLedger,
+  staticExportLedgers,
   staticFetchLiveRates,
   staticGetAuthStatus,
   staticGetLedger,
   staticGetLedgerSummaries,
+  staticImportLedgers,
   staticSaveExpense,
   staticSetSessionUnlocked,
   staticUpdateBudgets,
@@ -51,8 +56,9 @@ import { TripSettingsPanel } from './components/TripSettingsPanel';
 import { NewTripModal } from './components/NewTripModal';
 import { AuthLockScreen } from './components/AuthLockScreen';
 import { AuthSettingsModal } from './components/AuthSettingsModal';
+import { LedgerBackupPanel } from './components/LedgerBackupPanel';
 
-type AppTab = 'ledger' | 'chart' | 'budgets' | 'settings';
+type AppTab = 'ledger' | 'chart' | 'budgets' | 'settings' | 'backup';
 
 function getInitialDarkMode(): boolean {
   const saved = localStorage.getItem('travel_ledger_theme');
@@ -121,6 +127,7 @@ export default function App() {
         setMobileViewport(null);
         return;
       }
+      setActiveTab((prev) => (prev === 'backup' ? 'ledger' : prev));
       const vv = window.visualViewport;
       if (vv) {
         setMobileViewport({ top: vv.offsetTop, height: vv.height });
@@ -670,6 +677,94 @@ export default function App() {
     }, 50);
   };
 
+  const handleExportLedger = useCallback(
+    async (scope: 'single' | 'all'): Promise<string> => {
+      if (!ledger) {
+        throw new Error('目前沒有可匯出的旅行帳本');
+      }
+
+      if (!staticMode) {
+        const qs = scope === 'single' ? `?code=${encodeURIComponent(tripCode)}` : '';
+        const resp = await authFetch(`/api/ledgers/export${qs}`);
+        if (resp.status === 401) {
+          handleUnauthorized();
+          throw new Error('登入驗證已過期，請重新解鎖後再匯出');
+        }
+        if (resp.ok && isJsonResponse(resp)) {
+          const payload = (await resp.json()) as LedgerBackupFile;
+          return downloadBackupFile(payload, ledger.settings.tripName);
+        }
+      }
+
+      const exported = staticExportLedgers(scope === 'single' ? tripCode : undefined);
+      const backup = buildBackupFile(exported, scope, tripCode);
+      return downloadBackupFile(backup, ledger.settings.tripName);
+    },
+    [ledger, staticMode, tripCode, handleUnauthorized]
+  );
+
+  const handleImportLedgers = useCallback(
+    async (
+      incomingLedgers: TravelLedger[],
+      mode: 'overwrite' | 'create_new'
+    ): Promise<{
+      importedCount: number;
+      importedExpenseCount: number;
+      activeTripName: string;
+    }> => {
+      if (!staticMode) {
+        const resp = await authFetch('/api/ledgers/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ledgers: incomingLedgers, mode }),
+        });
+        if (resp.status === 401) {
+          handleUnauthorized();
+          throw new Error('登入驗證已過期，請重新解鎖後再匯入');
+        }
+        if (resp.ok && isJsonResponse(resp)) {
+          const data = (await resp.json()) as {
+            importedCount: number;
+            importedExpenseCount: number;
+            activeLedger: TravelLedger;
+            ledgers: LedgerSummary[];
+          };
+          setTripList(data.ledgers);
+          setLedger(data.activeLedger);
+          localStorage.setItem('travel_ledger_active', data.activeLedger.code);
+          setTripCode(data.activeLedger.code);
+          setEditingExpense(null);
+          setScopeFilter('all');
+          setRateNotice(null);
+          fetchRates(false, data.activeLedger.settings.currencies);
+          return {
+            importedCount: data.importedCount,
+            importedExpenseCount: data.importedExpenseCount,
+            activeTripName: data.activeLedger.settings.tripName,
+          };
+        }
+        const errPayload = (await resp.json().catch(() => ({}))) as { error?: string };
+        throw new Error(errPayload.error || '伺服器匯入帳本檔案失敗');
+      }
+
+      const res = staticImportLedgers(incomingLedgers, mode);
+      setTripList(res.ledgers);
+      setLedger(res.activeLedger);
+      localStorage.setItem('travel_ledger_active', res.activeLedger.code);
+      setTripCode(res.activeLedger.code);
+      setEditingExpense(null);
+      setScopeFilter('all');
+      setRateNotice(null);
+      fetchRates(false, res.activeLedger.settings.currencies);
+      return {
+        importedCount: res.importedCount,
+        importedExpenseCount: res.importedExpenseCount,
+        activeTripName: res.activeLedger.settings.tripName,
+      };
+    },
+    [staticMode, handleUnauthorized, fetchRates]
+  );
+
   // Global KPI computations
   const kpis = useMemo(() => {
     if (!ledger) {
@@ -791,12 +886,12 @@ export default function App() {
     >
       {/* Desktop Top Bar: Strict 3-Zone Contract with 4 Tabs */}
       <header className="hidden md:block sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
+        <div className="max-w-7xl mx-auto px-4 lg:px-6 h-16 flex items-center justify-between gap-4 lg:gap-8">
           <span className="font-display text-lg font-bold tracking-tight text-slate-900 dark:text-slate-50 whitespace-nowrap shrink-0">
             旅費帳本
           </span>
 
-          <nav aria-label="主頁籤導覽" className="flex items-center gap-6 text-sm font-medium">
+          <nav aria-label="主頁籤導覽" className="flex items-center gap-4 lg:gap-6 text-sm font-medium">
             {tabs.map((tab) => {
               const active = activeTab === tab.id;
               return (
@@ -814,6 +909,18 @@ export default function App() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={() => setActiveTab('backup')}
+              className={`py-1.5 border-b-2 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                activeTab === 'backup'
+                  ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300 font-bold'
+                  : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white'
+              }`}
+            >
+              <FolderSync className="w-4 h-4 shrink-0" />
+              <span>匯入與匯出</span>
+            </button>
           </nav>
 
           <button
@@ -1308,6 +1415,28 @@ export default function App() {
             />
           </section>
         )}
+
+        {/* Desktop Tab 5: Export & Import Backup Files (After 行程與貨幣設定) */}
+        {activeTab === 'backup' && (
+          <section className="hidden md:block rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-950 dark:text-white flex items-center gap-2">
+                <FolderSync className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                <span>匯入與匯出帳本檔案</span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                匯出目前或全部旅行帳本的完整記錄檔 (.json)，或從備份檔案匯入還原行程、預算與消費明細。
+              </p>
+            </div>
+
+            <LedgerBackupPanel
+              currentLedger={ledger}
+              tripCount={Math.max(tripList.length, 1)}
+              onExportLedger={handleExportLedger}
+              onImportLedgers={handleImportLedgers}
+            />
+          </section>
+        )}
       </main>
 
       {/* Mobile Permanently Pinned Bottom Navigation Bar (4 Exact Tabs) */}
@@ -1350,6 +1479,10 @@ export default function App() {
         isOpen={authModalOpen}
         authStatus={authStatus}
         staticMode={staticMode}
+        currentLedger={ledger}
+        tripCount={Math.max(tripList.length, 1)}
+        onExportLedger={handleExportLedger}
+        onImportLedgers={handleImportLedgers}
         onClose={() => setAuthModalOpen(false)}
         onStatusChange={(nextStatus) => setAuthStatus(nextStatus)}
         onLockNow={handleLockNow}

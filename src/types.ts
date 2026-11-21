@@ -93,3 +93,12 @@ export interface AuthStatusPayload {
   passkeys: RegisteredPasskeyInfo[];
 }
 
+export interface LedgerBackupFile {
+  format: 'trip-ledger-backup';
+  version: 1;
+  exportedAt: string;
+  scope: 'single' | 'all';
+  activeCode?: string;
+  ledgers: TravelLedger[];
+}
+

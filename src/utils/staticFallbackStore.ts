@@ -10,6 +10,7 @@ import type {
   TravelLedger,
 } from '../types';
 import { calculateExpenseTwd } from './calculations';
+import { sanitizeImportedLedgerClient } from './ledgerBackup';
 
 const STATIC_LEDGERS_KEY = 'triple_static_ledgers_v1';
 const STATIC_AUTH_KEY = 'triple_static_auth_v1';
@@ -301,6 +302,68 @@ export function staticDeleteExpense(code: string, expenseId: string): TravelLedg
   map[code] = updated;
   saveStaticLedgersMap(map);
   return updated;
+}
+
+export function staticExportLedgers(code?: string): TravelLedger[] {
+  const map = loadStaticLedgersMap();
+  if (code) {
+    return [map[code] || createDefaultLedger(code, code === 'TRIP2026')];
+  }
+  return Object.values(map).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function staticImportLedgers(
+  incomingList: TravelLedger[],
+  mode: 'overwrite' | 'create_new'
+): {
+  importedCount: number;
+  importedExpenseCount: number;
+  activeLedger: TravelLedger;
+  ledgers: LedgerSummary[];
+} {
+  const map = loadStaticLedgersMap();
+  const generateUniqueCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let nextCode = '';
+    do {
+      nextCode = `TRIP_${Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')}`;
+    } while (map[nextCode]);
+    return nextCode;
+  };
+
+  const now = Date.now();
+  const importedLedgers: TravelLedger[] = [];
+  let importedExpenseCount = 0;
+
+  for (const item of incomingList) {
+    const clean = sanitizeImportedLedgerClient(item);
+    if (!clean) continue;
+
+    const targetCode =
+      mode === 'create_new' || !clean.code ? generateUniqueCode() : clean.code;
+    const existing = map[targetCode];
+    const saved: TravelLedger = {
+      ...clean,
+      code: targetCode,
+      version: existing ? existing.version + 1 : 1,
+      updatedAt: now,
+    };
+    map[targetCode] = saved;
+    importedLedgers.push(saved);
+    importedExpenseCount += saved.expenses.length;
+  }
+
+  if (importedLedgers.length === 0) {
+    throw new Error('找不到可匯入的旅行帳本內容');
+  }
+
+  saveStaticLedgersMap(map);
+  return {
+    importedCount: importedLedgers.length,
+    importedExpenseCount,
+    activeLedger: importedLedgers[0],
+    ledgers: staticGetLedgerSummaries(),
+  };
 }
 
 export async function staticFetchLiveRates(): Promise<LiveRatesPayload> {

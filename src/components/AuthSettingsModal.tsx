@@ -10,13 +10,14 @@ import {
   ExternalLink,
   AlertCircle,
   Check,
+  FolderSync,
 } from 'lucide-react';
 import {
   browserSupportsWebAuthn,
   platformAuthenticatorIsAvailable,
   startRegistration,
 } from '@simplewebauthn/browser';
-import type { AuthStatusPayload } from '../types';
+import type { AuthStatusPayload, TravelLedger } from '../types';
 import {
   authFetch,
   detectDefaultDeviceLabel,
@@ -28,11 +29,23 @@ import {
   staticSetupPin,
   staticToggleAuth,
 } from '../utils/staticFallbackStore';
+import { LedgerBackupPanel } from './LedgerBackupPanel';
 
 interface AuthSettingsModalProps {
   isOpen: boolean;
   authStatus: AuthStatusPayload;
   staticMode?: boolean;
+  currentLedger?: TravelLedger | null;
+  tripCount?: number;
+  onExportLedger?: (scope: 'single' | 'all') => Promise<string>;
+  onImportLedgers?: (
+    ledgers: TravelLedger[],
+    mode: 'overwrite' | 'create_new'
+  ) => Promise<{
+    importedCount: number;
+    importedExpenseCount: number;
+    activeTripName: string;
+  }>;
   onClose: () => void;
   onStatusChange: (nextStatus: AuthStatusPayload) => void;
   onLockNow: () => Promise<void>;
@@ -50,6 +63,10 @@ export const AuthSettingsModal: React.FC<AuthSettingsModalProps> = ({
   isOpen,
   authStatus,
   staticMode = false,
+  currentLedger = null,
+  tripCount = 1,
+  onExportLedger,
+  onImportLedgers,
   onClose,
   onStatusChange,
   onLockNow,
@@ -572,6 +589,28 @@ export const AuthSettingsModal: React.FC<AuthSettingsModalProps> = ({
             </button>
           </div>
         </form>
+
+        {/* Section 3 (Mobile Only): Ledger Backup Export & Import inside 保護選單 */}
+        {currentLedger && onExportLedger && onImportLedgers && (
+          <div className="md:hidden space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white flex items-center gap-1.5">
+                <FolderSync className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>3. 匯入與匯出帳本檔案</span>
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                將本機或雲端記錄匯出為 .json 檔案保存，或從備份檔案匯入還原。
+              </p>
+            </div>
+            <LedgerBackupPanel
+              currentLedger={currentLedger}
+              tripCount={tripCount}
+              onExportLedger={onExportLedger}
+              onImportLedgers={onImportLedgers}
+              compact
+            />
+          </div>
+        )}
 
         {/* Note on Google Account Auth */}
         <div className="border-t border-slate-100 dark:border-slate-800 pt-3 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
