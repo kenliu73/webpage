@@ -121,12 +121,12 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
           {savedNotice ? (
             <>
               <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
-              <span>已同步儲存</span>
+              <span>已儲存</span>
             </>
           ) : saving ? (
-            <span>同步儲存中...</span>
+            <span>儲存中...</span>
           ) : (
-            <span>共 {budgets.length} 項預算 · 已與雲端同步</span>
+            <span>共 {budgets.length} 項預算</span>
           )}
         </div>
       </div>

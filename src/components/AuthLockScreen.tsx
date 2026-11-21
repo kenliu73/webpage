@@ -218,7 +218,7 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
               旅費帳本已鎖定保護
             </h1>
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              請使用 iPhone 人臉辨識（Face ID / 生物辨識通行金鑰）或備援解鎖密碼驗證身分後檢視與同步帳本。
+              請使用 iPhone 人臉辨識（Face ID / 生物辨識通行金鑰）或備援解鎖密碼驗證身分後檢視與編輯帳本。
             </p>
           </div>
 

@@ -333,7 +333,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
           className="control-green-active h-11 px-6 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm"
         >
           {savedNotice ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-          <span>{saving ? '同步儲存中...' : savedNotice ? '已更新行程與貨幣設定' : '儲存行程與貨幣設定'}</span>
+          <span>{saving ? '儲存中...' : savedNotice ? '已更新行程與貨幣設定' : '儲存行程與貨幣設定'}</span>
         </button>
       </div>
     </form>

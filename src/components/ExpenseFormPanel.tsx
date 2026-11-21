@@ -485,7 +485,7 @@ export const ExpenseFormPanel: React.FC<ExpenseFormPanelProps> = ({
           {editingExpense ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
           <span>
             {submitting
-              ? '同步儲存中...'
+              ? '儲存中...'
               : editingExpense
               ? '儲存修改紀錄'
               : '新增消費紀錄'}

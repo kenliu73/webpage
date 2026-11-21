@@ -15,8 +15,6 @@ import {
   CheckCircle2,
   X,
   FolderSync,
-  Smartphone,
-  Cloud,
 } from 'lucide-react';
 import type {
   AuthStatusPayload,
@@ -33,13 +31,6 @@ import type {
 import { formatCurrencyAmount, formatTwd } from './constants/currencies';
 import { authFetch, getSseAuthUrl, setStoredAuthToken } from './utils/authClient';
 import { buildBackupFile, downloadBackupFile } from './utils/ledgerBackup';
-import {
-  extractStartupHashPayload,
-  loadCloudSyncConfig,
-  saveCloudSyncConfig,
-  syncWithCloudGist,
-  type CloudSyncConfig,
-} from './utils/cloudGistSync';
 import {
   staticApplyVisaRates,
   staticCreateLedger,
@@ -66,7 +57,6 @@ import { NewTripModal } from './components/NewTripModal';
 import { AuthLockScreen } from './components/AuthLockScreen';
 import { AuthSettingsModal } from './components/AuthSettingsModal';
 import { LedgerBackupPanel } from './components/LedgerBackupPanel';
-import { SyncModal } from './components/SyncModal';
 
 type AppTab = 'ledger' | 'chart' | 'budgets' | 'settings' | 'backup';
 
@@ -78,18 +68,6 @@ function getInitialDarkMode(): boolean {
 }
 
 function getInitialTripCode(): string {
-  try {
-    const param = new URLSearchParams(window.location.search).get('trip');
-    if (param && param.trim()) {
-      const cleaned = param.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
-      if (cleaned) {
-        localStorage.setItem('travel_ledger_active', cleaned);
-        return cleaned;
-      }
-    }
-  } catch {
-    // ignore
-  }
   return localStorage.getItem('travel_ledger_active') || 'TRIP2026';
 }
 
@@ -109,7 +87,6 @@ export default function App() {
   const [ledger, setLedger] = useState<TravelLedger | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string>('');
-  const [sseConnected, setSseConnected] = useState<boolean>(false);
 
   const [rates, setRates] = useState<LiveRatesPayload | null>(null);
   const [ratesLoading, setRatesLoading] = useState<boolean>(false);
@@ -134,19 +111,6 @@ export default function App() {
     passkeys: [],
   });
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
-
-  const [syncModalOpen, setSyncModalOpen] = useState<boolean>(false);
-  const [cloudConfig, setCloudConfig] = useState<CloudSyncConfig | null>(loadCloudSyncConfig);
-  const [syncing, setSyncing] = useState<boolean>(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(
-    () => loadCloudSyncConfig()?.lastSyncedAt ?? null
-  );
-  const [syncNotice, setSyncNotice] = useState<string>('');
-
-  const startupHashRef = useRef<ReturnType<typeof extractStartupHashPayload> | null>(null);
-  if (startupHashRef.current === null && typeof window !== 'undefined') {
-    startupHashRef.current = extractStartupHashPayload();
-  }
 
   const formSectionRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLElement>(null);
@@ -290,7 +254,6 @@ export default function App() {
       }
       setStoredAuthToken(null);
     }
-    setSseConnected(false);
     setAuthStatus((prev) => ({
       ...prev,
       authenticated: !prev.enabled,
@@ -299,7 +262,6 @@ export default function App() {
 
   const handleUnauthorized = useCallback(() => {
     setStoredAuthToken(null);
-    setSseConnected(false);
     setAuthStatus((prev) => ({ ...prev, enabled: true, authenticated: false }));
   }, []);
 
@@ -348,19 +310,13 @@ export default function App() {
         const data = JSON.parse(event.data) as { ledgers?: LedgerSummary[] };
         if (Array.isArray(data.ledgers)) {
           setTripList(data.ledgers);
-          if (data.ledgers.length > 0 && !data.ledgers.some((t) => t.code === tripCode)) {
-            const firstCode = data.ledgers[0].code;
-            localStorage.setItem('travel_ledger_active', firstCode);
-            setEditingExpense(null);
-            setTripCode(firstCode);
-          }
         }
       } catch {
         // ignore heartbeat
       }
     };
     return () => listEs.close();
-  }, [fetchTripList, isUnlocked, staticMode, tripCode]);
+  }, [fetchTripList, isUnlocked, staticMode]);
 
   // Fetch active trip ledger
   const fetchLedger = useCallback(
@@ -370,7 +326,6 @@ export default function App() {
         setLedger(staticGetLedger(code));
         setLoadError('');
         setLoading(false);
-        setLastSyncedAt(Date.now());
         return;
       }
       setLoading(true);
@@ -384,7 +339,6 @@ export default function App() {
         if (!resp.ok || !isJsonResponse(resp)) throw new Error('無法讀取旅遊帳本資料');
         const data = (await resp.json()) as TravelLedger;
         setLedger(data);
-        setLastSyncedAt(Date.now());
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : '連線失敗');
       } finally {
@@ -398,218 +352,6 @@ export default function App() {
     if (!isUnlocked) return;
     fetchLedger(tripCode);
   }, [tripCode, fetchLedger, isUnlocked]);
-
-  // Keep URL ?trip=CODE aligned with active ledger so sharing/scanning opens the same trip
-  useEffect(() => {
-    if (typeof window === 'undefined' || !tripCode) return;
-    try {
-      const url = new URL(window.location.href);
-      if (url.searchParams.get('trip') !== tripCode) {
-        url.searchParams.set('trip', tripCode);
-        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-      }
-    } catch {
-      // ignore
-    }
-  }, [tripCode]);
-
-  // Cloud Gist bidirectional sync runner (for Static / GitHub Pages mode)
-  const runCloudGistSync = useCallback(
-    async (overrideConfig?: CloudSyncConfig | null) => {
-      const cfg = overrideConfig ?? cloudConfig;
-      if (!staticMode || !cfg) return;
-      setSyncing(true);
-      try {
-        const res = await syncWithCloudGist(cfg);
-        setCloudConfig({ ...cfg, lastSyncedAt: res.syncedAt });
-        setLastSyncedAt(res.syncedAt);
-        const summaries = staticGetLedgerSummaries();
-        setTripList(summaries);
-
-        const nextCode = res.merged.ledgers[tripCode]
-          ? tripCode
-          : summaries[0]?.code || tripCode;
-        if (nextCode !== tripCode) {
-          localStorage.setItem('travel_ledger_active', nextCode);
-          setEditingExpense(null);
-          setTripCode(nextCode);
-        }
-        const nextLedger = res.merged.ledgers[nextCode] || staticGetLedger(nextCode);
-        setLedger(nextLedger);
-        setEditingExpense((prev) =>
-          prev && !nextLedger.expenses.some((e) => e.id === prev.id) ? null : prev
-        );
-      } catch {
-        // Keep local edits safely intact if network offline
-      } finally {
-        setSyncing(false);
-      }
-    },
-    [cloudConfig, staticMode, tripCode]
-  );
-
-  const handleSyncNow = useCallback(async () => {
-    if (staticMode) {
-      await runCloudGistSync();
-      return;
-    }
-    setSyncing(true);
-    try {
-      await Promise.all([fetchTripList(), fetchLedger(tripCode)]);
-    } finally {
-      setSyncing(false);
-    }
-  }, [staticMode, runCloudGistSync, fetchTripList, fetchLedger, tripCode]);
-
-  // Handle startup pairing (#sync=...) or snapshot (#snapshot=...) URL hashes
-  useEffect(() => {
-    if (!authChecked || !isUnlocked) return;
-    const payload = startupHashRef.current;
-    if (!payload) return;
-    startupHashRef.current = {};
-
-    if (payload.pairing) {
-      const nextCfg: CloudSyncConfig = {
-        gistId: payload.pairing.gistId,
-        token: payload.pairing.token,
-      };
-      saveCloudSyncConfig(nextCfg);
-      setCloudConfig(nextCfg);
-      if (staticMode) {
-        runCloudGistSync(nextCfg);
-        setSyncNotice('已配對手機與電腦的雲端同步空間，資料將會自動雙向同步。');
-      }
-    } else if (payload.snapshot) {
-      const snap = payload.snapshot;
-      if (staticMode) {
-        const res = staticImportLedgers([snap], 'overwrite');
-        setTripList(res.ledgers);
-        setLedger(res.activeLedger);
-        localStorage.setItem('travel_ledger_active', res.activeLedger.code);
-        setTripCode(res.activeLedger.code);
-        setSyncNotice(`已從傳送連結匯入帳本「${res.activeLedger.settings.tripName}」。`);
-      } else {
-        authFetch('/api/ledgers/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ledgers: [snap], mode: 'overwrite' }),
-        })
-          .then(async (resp) => {
-            if (resp.ok && isJsonResponse(resp)) {
-              const data = (await resp.json()) as {
-                activeLedger: TravelLedger;
-                ledgers: LedgerSummary[];
-              };
-              setTripList(data.ledgers);
-              setLedger(data.activeLedger);
-              localStorage.setItem('travel_ledger_active', data.activeLedger.code);
-              setTripCode(data.activeLedger.code);
-              setSyncNotice(`已從傳送連結匯入帳本「${data.activeLedger.settings.tripName}」。`);
-            }
-          })
-          .catch(() => {
-            // ignore
-          });
-      }
-    }
-  }, [authChecked, isUnlocked, staticMode, runCloudGistSync]);
-
-  // Real-time SSE sync (Server mode) & periodic/focus sync (Both Server & Cloud Gist mode)
-  useEffect(() => {
-    if (!isUnlocked) return;
-
-    if (staticMode) {
-      if (!cloudConfig) return;
-      runCloudGistSync();
-
-      const handleWakeSync = () => {
-        if (document.visibilityState === 'visible') {
-          runCloudGistSync();
-        }
-      };
-      window.addEventListener('focus', handleWakeSync);
-      window.addEventListener('online', handleWakeSync);
-      document.addEventListener('visibilitychange', handleWakeSync);
-      const timer = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          runCloudGistSync();
-        }
-      }, 15000);
-
-      return () => {
-        window.removeEventListener('focus', handleWakeSync);
-        window.removeEventListener('online', handleWakeSync);
-        document.removeEventListener('visibilitychange', handleWakeSync);
-        clearInterval(timer);
-      };
-    }
-
-    const url = getSseAuthUrl(`/api/ledgers/${encodeURIComponent(tripCode)}/stream`);
-    const es = new EventSource(url);
-    let openedOnce = false;
-
-    es.onopen = () => {
-      setSseConnected(true);
-      setLastSyncedAt(Date.now());
-      if (openedOnce) {
-        fetchLedger(tripCode);
-        fetchTripList();
-      }
-      openedOnce = true;
-    };
-    es.onmessage = (event) => {
-      try {
-        const incoming = JSON.parse(event.data) as TravelLedger;
-        if (incoming && incoming.code === tripCode) {
-          setLastSyncedAt(Date.now());
-          setLedger((prev) => {
-            if (!prev || incoming.version >= prev.version) {
-              return incoming;
-            }
-            return prev;
-          });
-          setEditingExpense((prev) => {
-            if (prev && !incoming.expenses.some((e) => e.id === prev.id)) {
-              setSyncNotice('目前編輯中的消費紀錄已由另一台裝置刪除。');
-              return null;
-            }
-            return prev;
-          });
-        }
-      } catch {
-        // ignore malformed heartbeat
-      }
-    };
-    es.onerror = () => {
-      setSseConnected(false);
-    };
-
-    const handleWakeRefresh = () => {
-      if (document.visibilityState === 'visible') {
-        fetchLedger(tripCode);
-        fetchTripList();
-      }
-    };
-    document.addEventListener('visibilitychange', handleWakeRefresh);
-    window.addEventListener('focus', handleWakeRefresh);
-    window.addEventListener('online', handleWakeRefresh);
-
-    const fallbackPoll = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchLedger(tripCode);
-        fetchTripList();
-      }
-    }, 20000);
-
-    return () => {
-      es.close();
-      setSseConnected(false);
-      document.removeEventListener('visibilitychange', handleWakeRefresh);
-      window.removeEventListener('focus', handleWakeRefresh);
-      window.removeEventListener('online', handleWakeRefresh);
-      clearInterval(fallbackPoll);
-    };
-  }, [tripCode, fetchLedger, fetchTripList, isUnlocked, staticMode, cloudConfig, runCloudGistSync]);
 
   const handleSelectTrip = (nextCode: string) => {
     localStorage.setItem('travel_ledger_active', nextCode);
@@ -676,9 +418,6 @@ export default function App() {
       setLedger(applied.ledger);
       if (staticMode) {
         setTripList(staticGetLedgerSummaries());
-        if (cloudConfig) {
-          void runCloudGistSync();
-        }
       }
       setRateNotice(buildNotice(applied.ledger, freshRates, applied.updatedExpenseCount));
     } catch {
@@ -688,15 +427,12 @@ export default function App() {
       setLedger(applied.ledger);
       if (staticMode) {
         setTripList(staticGetLedgerSummaries());
-        if (cloudConfig) {
-          void runCloudGistSync();
-        }
       }
       setRateNotice(buildNotice(applied.ledger, fallbackRates, applied.updatedExpenseCount));
     } finally {
       setRatesLoading(false);
     }
-  }, [ledger, staticMode, tripCode, handleUnauthorized, fetchTripList, cloudConfig, runCloudGistSync]);
+  }, [ledger, staticMode, tripCode, handleUnauthorized, fetchTripList]);
 
   const handleCreateTrip = async (settings: Partial<LedgerSettings>) => {
     if (staticMode) {
@@ -708,9 +444,6 @@ export default function App() {
       setScopeFilter('all');
       await fetchTripList();
       await fetchRates(true, created.settings.currencies);
-      if (cloudConfig) {
-        void runCloudGistSync();
-      }
       if (typeof window !== 'undefined' && window.innerWidth < 768) {
         window.scrollTo(0, 0);
         mainScrollRef.current?.scrollTo({ top: 0 });
@@ -753,9 +486,6 @@ export default function App() {
         localStorage.setItem('travel_ledger_active', nextCode);
         setTripCode(nextCode);
       }
-      if (cloudConfig) {
-        void runCloudGistSync();
-      }
       return;
     }
     const resp = await authFetch(`/api/ledgers/${encodeURIComponent(tripCode)}`, {
@@ -785,9 +515,6 @@ export default function App() {
         setLedger(updated);
         setTripList(staticGetLedgerSummaries());
         fetchRates(false, updated.settings.currencies);
-        if (cloudConfig) {
-          void runCloudGistSync();
-        }
         return;
       }
       const resp = await authFetch(`/api/ledgers/${encodeURIComponent(tripCode)}/settings`, {
@@ -819,9 +546,6 @@ export default function App() {
         const updated = staticUpdateBudgets(tripCode, nextBudgets);
         setLedger(updated);
         setTripList(staticGetLedgerSummaries());
-        if (cloudConfig) {
-          void runCloudGistSync();
-        }
         return;
       }
       const resp = await authFetch(`/api/ledgers/${encodeURIComponent(tripCode)}/budgets`, {
@@ -849,9 +573,6 @@ export default function App() {
         const updated = staticSaveExpense(tripCode, expense, isEdit);
         setLedger(updated);
         setTripList(staticGetLedgerSummaries());
-        if (cloudConfig) {
-          void runCloudGistSync();
-        }
         return;
       }
       const endpoint = isEdit
@@ -882,9 +603,6 @@ export default function App() {
       setTripList(staticGetLedgerSummaries());
       if (editingExpense?.id === expenseId) {
         setEditingExpense(null);
-      }
-      if (cloudConfig) {
-        void runCloudGistSync();
       }
       return;
     }
@@ -992,16 +710,13 @@ export default function App() {
       setScopeFilter('all');
       setRateNotice(null);
       fetchRates(false, res.activeLedger.settings.currencies);
-      if (cloudConfig) {
-        void runCloudGistSync();
-      }
       return {
         importedCount: res.importedCount,
         importedExpenseCount: res.importedExpenseCount,
         activeTripName: res.activeLedger.settings.tripName,
       };
     },
-    [staticMode, handleUnauthorized, fetchRates, cloudConfig, runCloudGistSync]
+    [staticMode, handleUnauthorized, fetchRates]
   );
 
   // Global KPI computations
@@ -1293,72 +1008,6 @@ export default function App() {
         id="top"
         className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-3 pb-4 space-y-4 flex-1 min-h-0 overflow-y-auto overscroll-y-contain md:overflow-visible md:pb-0"
       >
-        {/* Mobile Cross-Device Sync Bar (Compact single-row bar above content) */}
-        <section className="md:hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className={`w-2 h-2 rounded-full shrink-0 ${
-                (!staticMode && sseConnected) || (staticMode && cloudConfig)
-                  ? 'bg-emerald-500'
-                  : 'bg-amber-500'
-              }`}
-            />
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
-              {!staticMode
-                ? sseConnected
-                  ? '手機與電腦即時同步中'
-                  : '同步連線中...'
-                : cloudConfig
-                  ? 'GitHub 雲端同步中'
-                  : '本機模式 · 可開啟跨裝置同步'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {(!staticMode || cloudConfig) && (
-              <button
-                type="button"
-                onClick={handleSyncNow}
-                disabled={syncing}
-                aria-label="立即同步"
-                className="control-green h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1 whitespace-nowrap"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                <span>同步</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setSyncModalOpen(true)}
-              className="control-green-active h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1 whitespace-nowrap"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>配對同步</span>
-            </button>
-          </div>
-        </section>
-
-        {/* Cross-Device Sync Notice Banner */}
-        {syncNotice && (
-          <section
-            aria-live="polite"
-            className="display-yellow rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs font-semibold"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Cloud className="w-4 h-4 shrink-0" />
-              <span>{syncNotice}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSyncNotice('')}
-              aria-label="關閉同步提示"
-              className="control-green h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </section>
-        )}
-
         {/* Applied VISA Rate Summary Banner (Visible on both Mobile & Desktop after clicking 匯率) */}
         {rateNotice && (
           <section
@@ -1393,7 +1042,7 @@ export default function App() {
 
               <div className="text-[11px] opacity-85">
                 {rateNotice.updatedExpenseCount > 0
-                  ? `已同步重算本帳本內 ${rateNotice.updatedExpenseCount} 筆外幣信用卡消費紀錄（外幣現金維持出國前固定匯率）。`
+                  ? `已重新計算本帳本內 ${rateNotice.updatedExpenseCount} 筆外幣信用卡消費紀錄（外幣現金維持出國前固定匯率）。`
                   : '已更新本帳本所選貨幣 VISA 匯率（外幣現金維持出國前固定匯率）。'}
               </div>
             </div>
@@ -1535,39 +1184,9 @@ export default function App() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 md:ml-auto">
-              <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                {staticMode
-                  ? cloudConfig
-                    ? `已儲存 ${tripList.length} 本旅行帳本 · GitHub 雲端雙向同步中`
-                    : `靜態網頁模式（已儲存 ${tripList.length} 本旅行帳本 · 本機儲存）`
-                  : sseConnected
-                    ? `已儲存 ${tripList.length} 本旅行帳本 · 桌機與手機資料同步中`
-                    : '雲端同步連線中'}
-              </span>
-
-              {(!staticMode || cloudConfig) && (
-                <button
-                  type="button"
-                  onClick={handleSyncNow}
-                  disabled={syncing}
-                  title="立即同步最新資料"
-                  className="control-green h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1 whitespace-nowrap"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                  <span>立即同步</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setSyncModalOpen(true)}
-                className="control-green-active h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>跨裝置同步 / QR</span>
-              </button>
-            </div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 md:ml-auto whitespace-nowrap">
+              已儲存 {tripList.length} 本旅行帳本 · 本機匯入／匯出模式
+            </span>
           </div>
         </section>
 
@@ -1817,21 +1436,6 @@ export default function App() {
         onClose={() => setAuthModalOpen(false)}
         onStatusChange={(nextStatus) => setAuthStatus(nextStatus)}
         onLockNow={handleLockNow}
-      />
-
-      {/* Cross-Device Mobile & Desktop Sync / QR Pairing Modal */}
-      <SyncModal
-        isOpen={syncModalOpen}
-        onClose={() => setSyncModalOpen(false)}
-        staticMode={staticMode}
-        sseConnected={sseConnected}
-        currentLedger={ledger}
-        tripCount={Math.max(tripList.length, 1)}
-        lastSyncedAt={lastSyncedAt}
-        syncing={syncing}
-        cloudConfig={cloudConfig}
-        onCloudConfigChange={setCloudConfig}
-        onSyncNow={handleSyncNow}
       />
     </div>
   );

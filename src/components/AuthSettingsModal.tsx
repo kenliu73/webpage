@@ -599,7 +599,7 @@ export const AuthSettingsModal: React.FC<AuthSettingsModalProps> = ({
                 <span>3. 匯入與匯出帳本檔案</span>
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                將本機或雲端記錄匯出為 .json 檔案保存，或從備份檔案匯入還原。
+                將目前帳本記錄匯出為 .json 檔案保存，或從備份檔案匯入還原。
               </p>
             </div>
             <LedgerBackupPanel
