@@ -5,7 +5,11 @@ import { evaluateCalculatorExpression } from '../utils/calculations';
 interface NumericCalculatorInputProps {
   value: number;
   onChange: (nextVal: number) => void;
+  onCommit?: (finalVal: number) => void;
   prefix?: string;
+  compactPrefix?: boolean;
+  hideCalcLabel?: boolean;
+  blurOnEnter?: boolean;
   allowDecimal?: boolean;
   placeholder?: string;
   ariaLabel?: string;
@@ -17,7 +21,11 @@ interface NumericCalculatorInputProps {
 export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
   value,
   onChange,
+  onCommit,
   prefix,
+  compactPrefix = false,
+  hideCalcLabel = false,
+  blurOnEnter = false,
   allowDecimal = true,
   placeholder = '0',
   ariaLabel,
@@ -66,12 +74,15 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
     if (!cleaned || cleaned === '.') {
       setTextValue('');
       onChange(0);
+      onCommit?.(0);
       return;
     }
     const parsed = Number(cleaned);
     if (Number.isFinite(parsed) && parsed >= 0) {
-      onChange(parsed);
-      setTextValue(parsed === 0 ? '' : String(parsed));
+      const normalized = allowDecimal ? parsed : Math.round(parsed);
+      onChange(normalized);
+      onCommit?.(normalized);
+      setTextValue(normalized === 0 ? '' : String(normalized));
     } else {
       setTextValue(value === 0 ? '' : String(value));
     }
@@ -158,9 +169,11 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
     if (res !== null) {
       const finalVal = allowDecimal ? Math.max(0, res) : Math.max(0, Math.round(res));
       onChange(finalVal);
+      onCommit?.(finalVal);
       setTextValue(finalVal === 0 ? '' : String(finalVal));
     } else if (expr.trim() === '') {
       onChange(0);
+      onCommit?.(0);
       setTextValue('');
     }
     setCalcOpen(false);
@@ -177,10 +190,14 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
-      <div className="flex items-stretch gap-1.5">
+      <div className={`flex items-stretch ${compactPrefix ? 'gap-1' : 'gap-1.5'}`}>
         <div className="relative flex-1 min-w-0">
           {prefix && (
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-emerald-800 dark:text-emerald-200 select-none">
+            <span
+              className={`pointer-events-none absolute top-1/2 -translate-y-1/2 font-medium text-emerald-800 dark:text-emerald-200 select-none ${
+                compactPrefix ? 'left-2 text-[11px] sm:text-xs' : 'left-3 text-xs'
+              }`}
+            >
               {prefix}
             </span>
           )}
@@ -194,9 +211,18 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
             onFocus={handleFocus}
             onBlur={handleBlur}
             onChange={handleInputChange}
+            onKeyDown={(e) => {
+              if (blurOnEnter && e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
             className={`input-green w-full rounded-lg font-mono-num font-semibold text-right ${
-              prefix ? 'pl-11 pr-3' : 'px-3'
-            } ${compact ? 'h-10 text-base sm:text-sm' : 'h-11 text-base'}`}
+              prefix
+                ? compactPrefix
+                  ? 'pl-12 pr-2'
+                  : 'pl-11 pr-3'
+                : 'px-3'
+            } ${compact ? 'h-10 text-base sm:text-sm' : 'h-11 text-base lg:text-sm'}`}
           />
         </div>
 
@@ -206,11 +232,17 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
           title="開啟計算機輸入"
           aria-label="開啟計算機輸入"
           className={`control-green shrink-0 rounded-lg flex items-center justify-center gap-1.5 font-medium touch-manipulation select-none ${
-            compact ? 'h-10 px-2.5 text-xs' : 'h-11 px-3 text-sm'
+            compact
+              ? 'h-10 px-2.5 text-xs'
+              : hideCalcLabel
+              ? 'h-11 w-10 sm:w-11 text-sm'
+              : 'h-11 px-3 text-sm'
           } ${calcOpen ? 'ring-2 ring-emerald-500/50' : ''}`}
         >
           <Calculator className="w-4 h-4" />
-          <span className="hidden sm:inline whitespace-nowrap">計算機</span>
+          {!hideCalcLabel && (
+            <span className="hidden sm:inline whitespace-nowrap">計算機</span>
+          )}
         </button>
       </div>
 
@@ -218,11 +250,11 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
         <>
           {/* Mobile backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] sm:hidden"
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] sm:hidden"
             onClick={() => setCalcOpen(false)}
           />
           <div
-            className="fixed inset-x-3 bottom-4 z-50 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72
+            className="fixed inset-x-3 bottom-4 z-[60] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72
                        rounded-2xl border border-slate-200 dark:border-slate-700
                        bg-white dark:bg-slate-900 shadow-2xl p-3.5 touch-manipulation select-none"
           >

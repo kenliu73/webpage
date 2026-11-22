@@ -34,31 +34,22 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
   const [newPrepared, setNewPrepared] = useState(0);
   const [savedNotice, setSavedNotice] = useState(false);
 
-  const [focusedPreparedId, setFocusedPreparedId] = useState<string | null>(null);
-  const focusedIdRef = useRef<string | null>(null);
-
-  const [preparedDrafts, setPreparedDrafts] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
+  const [preparedDrafts, setPreparedDrafts] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
     for (const item of budgets) {
-      const val = getPreparedValue(item);
-      initial[item.id] = val === 0 ? '' : String(val);
+      initial[item.id] = getPreparedValue(item);
     }
     return initial;
   });
-  const preparedDraftsRef = useRef<Record<string, string>>(preparedDrafts);
+  const preparedDraftsRef = useRef<Record<string, number>>(preparedDrafts);
   preparedDraftsRef.current = preparedDrafts;
 
   // Sync draft values when budgets prop changes (e.g., switching trips or importing backups)
   useEffect(() => {
-    setPreparedDrafts((prev) => {
-      const next: Record<string, string> = {};
+    setPreparedDrafts(() => {
+      const next: Record<string, number> = {};
       for (const item of budgets) {
-        if (focusedIdRef.current === item.id && item.id in prev) {
-          next[item.id] = prev[item.id];
-        } else {
-          const val = getPreparedValue(item);
-          next[item.id] = val === 0 ? '' : String(val);
-        }
+        next[item.id] = getPreparedValue(item);
       }
       return next;
     });
@@ -75,9 +66,8 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
     if (editingId === item.id) {
       return Math.max(0, Math.round(editPrepared));
     }
-    const draft = preparedDrafts[item.id];
-    if (draft !== undefined) {
-      return draft === '' ? 0 : Math.max(0, Math.round(Number(draft) || 0));
+    if (item.id in preparedDrafts) {
+      return Math.max(0, Math.round(preparedDrafts[item.id] || 0));
     }
     return getPreparedValue(item);
   };
@@ -98,53 +88,28 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
     setTimeout(() => setSavedNotice(false), 1800);
   };
 
-  const handlePreparedFocus = (
-    item: BudgetItem,
-    e: React.FocusEvent<HTMLInputElement>
-  ) => {
-    focusedIdRef.current = item.id;
-    setFocusedPreparedId(item.id);
-    const currentDraft = preparedDraftsRef.current[item.id] ?? '';
-    if (currentDraft === '' || currentDraft === '0') {
-      setPreparedDrafts((prev) => ({ ...prev, [item.id]: '' }));
-    } else {
-      e.target.select();
-    }
+  const handlePreparedNumericChange = (id: string, nextVal: number) => {
+    const normalized = Math.max(0, Math.round(nextVal));
+    const nextDrafts = { ...preparedDraftsRef.current, [id]: normalized };
+    preparedDraftsRef.current = nextDrafts;
+    setPreparedDrafts(nextDrafts);
   };
 
-  const handlePreparedChange = (id: string, rawInput: string) => {
-    let cleaned = rawInput.replace(/[^0-9]/g, '');
-    if (cleaned.length > 1 && cleaned.startsWith('0')) {
-      cleaned = cleaned.replace(/^0+/, '');
-    }
-    if (cleaned === '0') {
-      cleaned = '';
-    }
-    setPreparedDrafts((prev) => ({ ...prev, [id]: cleaned }));
-  };
-
-  const commitPreparedDraft = async (id: string) => {
-    if (focusedIdRef.current === id) {
-      focusedIdRef.current = null;
-      setFocusedPreparedId(null);
-    }
+  const commitPreparedValue = async (id: string, finalVal: number) => {
     const target = budgets.find((b) => b.id === id);
     if (!target) return;
 
-    const rawDraft = preparedDraftsRef.current[id] ?? '';
-    const parsed = rawDraft === '' ? 0 : Math.max(0, Math.round(Number(rawDraft) || 0));
+    const normalized = Math.max(0, Math.round(finalVal));
     const currentSaved = getPreparedValue(target);
+    const nextDrafts = { ...preparedDraftsRef.current, [id]: normalized };
+    preparedDraftsRef.current = nextDrafts;
+    setPreparedDrafts(nextDrafts);
 
-    setPreparedDrafts((prev) => ({
-      ...prev,
-      [id]: parsed === 0 ? '' : String(parsed),
-    }));
-
-    if (parsed === currentSaved) return;
+    if (normalized === currentSaved) return;
 
     const next = budgets.map((item, idx) =>
       item.id === id
-        ? { ...item, preparedTwd: parsed, order: idx }
+        ? { ...item, preparedTwd: normalized, order: idx }
         : { ...item, order: idx }
     );
     await onSaveBudgets(next);
@@ -168,13 +133,10 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
 
   const mergeDraftsIntoBudgets = (list: BudgetItem[]): BudgetItem[] =>
     list.map((item, idx) => {
-      const rawDraft = preparedDraftsRef.current[item.id];
-      const preparedTwd =
-        rawDraft !== undefined
-          ? rawDraft === ''
-            ? 0
-            : Math.max(0, Math.round(Number(rawDraft) || 0))
-          : getPreparedValue(item);
+      const hasDraft = item.id in preparedDraftsRef.current;
+      const preparedTwd = hasDraft
+        ? Math.max(0, Math.round(preparedDraftsRef.current[item.id] || 0))
+        : getPreparedValue(item);
       return { ...item, preparedTwd, order: idx };
     });
 
@@ -197,7 +159,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
     await onSaveBudgets(next);
     setPreparedDrafts((prev) => ({
       ...prev,
-      [id]: nextPrepared === 0 ? '' : String(nextPrepared),
+      [id]: nextPrepared,
     }));
     setEditingId(null);
     triggerSavedNotice();
@@ -318,7 +280,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
               />
             </div>
             <div className="flex items-center justify-between text-[11px] opacity-75">
-              <span>提示：在下方每一列的「已準備」綠框輸入金額，離開欄位即自動儲存</span>
+              <span>提示：可在各列「已準備」欄直接輸入或點計算機按鈕，套用或離開欄位即自動儲存</span>
               <span className="font-mono-num font-semibold">{overallPct}%</span>
             </div>
           </div>
@@ -332,7 +294,6 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
           const budget = getBudgetValue(item);
           const prepared = getEffectivePrepared(item);
           const diff = prepared - budget;
-          const draftStr = preparedDrafts[item.id] ?? (prepared === 0 ? '' : String(prepared));
 
           if (isEditing) {
             return (
@@ -429,7 +390,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
           return (
             <div
               key={item.id}
-              className="grid grid-cols-1 lg:grid-cols-[minmax(190px,1fr)_minmax(340px,430px)_auto] gap-2 sm:gap-2.5 items-center p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+              className="grid grid-cols-1 lg:grid-cols-[minmax(180px,1fr)_minmax(390px,460px)_auto] gap-2 sm:gap-2.5 items-center p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
             >
               {/* Item Name + Readiness Status Badge */}
               <div className="display-yellow-soft h-11 px-3 rounded-lg flex items-center justify-between gap-2 text-sm font-semibold min-w-0">
@@ -453,41 +414,26 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
                 )}
               </div>
 
-              {/* Same-row Budget (Yellow read-only) & Prepared Funds Input (Green editable) on Mobile & Desktop */}
-              <div className="grid grid-cols-2 gap-2 min-w-0">
-                <div className="display-yellow h-11 px-2.5 sm:px-3 rounded-lg flex items-center justify-between gap-1.5 font-mono-num font-bold text-xs sm:text-sm min-w-0">
+              {/* Same-row Budget (Yellow read-only) & Prepared Funds Input with Calculator (Green editable) on Mobile & Desktop */}
+              <div className="grid grid-cols-[minmax(106px,0.78fr)_minmax(0,1.22fr)] sm:grid-cols-[minmax(140px,0.82fr)_minmax(0,1.18fr)] gap-1.5 sm:gap-2 min-w-0 items-center">
+                <div className="display-yellow h-11 px-2 sm:px-3 rounded-lg flex items-center justify-between gap-1 font-mono-num font-bold text-xs sm:text-sm min-w-0">
                   <span className="text-[11px] sm:text-xs font-normal opacity-75 shrink-0">
                     預算
                   </span>
                   <span className="truncate">{formatTwd(budget)}</span>
                 </div>
 
-                <label className="input-green h-11 px-2 sm:px-3 rounded-lg flex items-center justify-between gap-1 min-w-0 cursor-text">
-                  <span className="text-[11px] sm:text-xs font-medium text-emerald-900/80 dark:text-emerald-200/80 shrink-0 select-none">
-                    已準備
-                  </span>
-                  <div className="flex items-center justify-end gap-0.5 flex-1 min-w-0">
-                    <span className="text-[11px] font-mono-num text-emerald-800/70 dark:text-emerald-200/70 shrink-0 select-none">
-                      NT$
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      aria-label={`${item.name} 資金已準備金額`}
-                      value={draftStr}
-                      placeholder={focusedPreparedId === item.id ? '' : '0'}
-                      onFocus={(e) => handlePreparedFocus(item, e)}
-                      onChange={(e) => handlePreparedChange(item.id, e.target.value)}
-                      onBlur={() => void commitPreparedDraft(item.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      className="w-full min-w-0 bg-transparent border-0 p-0 text-right font-mono-num font-bold text-base lg:text-sm text-emerald-950 dark:text-emerald-50 placeholder:text-emerald-700/45 dark:placeholder:text-emerald-300/40 focus:outline-none"
-                    />
-                  </div>
-                </label>
+                <NumericCalculatorInput
+                  value={prepared}
+                  onChange={(val) => handlePreparedNumericChange(item.id, val)}
+                  onCommit={(val) => void commitPreparedValue(item.id, val)}
+                  prefix="已準備"
+                  compactPrefix
+                  hideCalcLabel
+                  blurOnEnter
+                  allowDecimal={false}
+                  ariaLabel={`${item.name} 資金已準備金額`}
+                />
               </div>
 
               {/* Action Buttons */}
