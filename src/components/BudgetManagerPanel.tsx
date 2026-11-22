@@ -280,7 +280,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
               />
             </div>
             <div className="flex items-center justify-between text-[11px] opacity-75">
-              <span>提示：可在各列「已準備」欄直接輸入或點計算機按鈕，套用或離開欄位即自動儲存</span>
+              <span>提示：手機版點擊「已準備」欄即開啟計算機輸入；套用或離開欄位自動儲存</span>
               <span className="font-mono-num font-semibold">{overallPct}%</span>
             </div>
           </div>
@@ -357,6 +357,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
                         value={editPrepared}
                         onChange={(val) => setEditPrepared(Math.round(val))}
                         prefix="NT$"
+                        mobileCalculatorOnly
                         allowDecimal={false}
                         ariaLabel={`${item.name} 資金已準備金額`}
                       />
@@ -431,6 +432,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
                   compactPrefix
                   hideCalcLabel
                   blurOnEnter
+                  mobileCalculatorOnly
                   allowDecimal={false}
                   ariaLabel={`${item.name} 資金已準備金額`}
                 />
@@ -548,6 +550,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
                 value={newPrepared}
                 onChange={(val) => setNewPrepared(Math.round(val))}
                 prefix="NT$"
+                mobileCalculatorOnly
                 allowDecimal={false}
                 ariaLabel="新預算項目資金已準備金額"
               />

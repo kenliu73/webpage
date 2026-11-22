@@ -10,6 +10,7 @@ interface NumericCalculatorInputProps {
   compactPrefix?: boolean;
   hideCalcLabel?: boolean;
   blurOnEnter?: boolean;
+  mobileCalculatorOnly?: boolean;
   allowDecimal?: boolean;
   placeholder?: string;
   ariaLabel?: string;
@@ -26,6 +27,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
   compactPrefix = false,
   hideCalcLabel = false,
   blurOnEnter = false,
+  mobileCalculatorOnly = false,
   allowDecimal = true,
   placeholder = '0',
   ariaLabel,
@@ -188,9 +190,43 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
     ['.', '0', '⌫', '+'],
   ];
 
+  const formattedDisplayValue =
+    value === 0
+      ? placeholder
+      : new Intl.NumberFormat('zh-TW', {
+          maximumFractionDigits: allowDecimal ? 2 : 0,
+        }).format(value);
+
   return (
     <div ref={containerRef} className={`relative ${className}`}>
-      <div className={`flex items-stretch ${compactPrefix ? 'gap-1' : 'gap-1.5'}`}>
+      {mobileCalculatorOnly && (
+        <button
+          type="button"
+          onClick={openCalculator}
+          aria-label={ariaLabel ? `${ariaLabel}（開啟計算機輸入）` : '開啟計算機輸入'}
+          className={`md:hidden input-green w-full rounded-lg flex items-center justify-between gap-1.5 font-mono-num font-bold cursor-pointer touch-manipulation select-none ${
+            compact ? 'h-10 px-2.5 text-sm' : 'h-11 px-2.5 text-sm'
+          } ${calcOpen ? 'ring-2 ring-emerald-500/50' : ''}`}
+        >
+          {prefix ? (
+            <span className="text-[11px] font-medium text-emerald-800 dark:text-emerald-200 shrink-0">
+              {prefix}
+            </span>
+          ) : null}
+          <span className="flex items-center justify-end gap-1.5 flex-1 min-w-0">
+            <span className={`truncate ${value === 0 ? 'opacity-50' : ''}`}>
+              {formattedDisplayValue}
+            </span>
+            <Calculator className="w-4 h-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
+          </span>
+        </button>
+      )}
+
+      <div
+        className={`${mobileCalculatorOnly ? 'hidden md:flex' : 'flex'} items-stretch ${
+          compactPrefix ? 'gap-1' : 'gap-1.5'
+        }`}
+      >
         <div className="relative flex-1 min-w-0">
           {prefix && (
             <span
@@ -250,11 +286,11 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
         <>
           {/* Mobile backdrop */}
           <div
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] sm:hidden"
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] md:hidden"
             onClick={() => setCalcOpen(false)}
           />
           <div
-            className="fixed inset-x-3 bottom-4 z-[60] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72
+            className="fixed inset-x-3 bottom-4 z-[60] md:absolute md:inset-auto md:right-0 md:top-full md:mt-2 md:w-72
                        rounded-2xl border border-slate-200 dark:border-slate-700
                        bg-white dark:bg-slate-900 shadow-2xl p-3.5 touch-manipulation select-none"
           >
