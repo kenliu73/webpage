@@ -12,6 +12,7 @@ interface NumericCalculatorInputProps {
   blurOnEnter?: boolean;
   mobileCalculatorOnly?: boolean;
   allowDecimal?: boolean;
+  maxDecimals?: number;
   placeholder?: string;
   ariaLabel?: string;
   id?: string;
@@ -29,6 +30,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
   blurOnEnter = false,
   mobileCalculatorOnly = false,
   allowDecimal = true,
+  maxDecimals = 2,
   placeholder = '0',
   ariaLabel,
   id,
@@ -137,7 +139,6 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
       }
 
       if (token === '.') {
-        if (!allowDecimal) return prev;
         if (!prev || /[+\-×÷]$/.test(prev)) {
           return `${prev}0.`;
         }
@@ -161,15 +162,18 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
   const handleEvaluate = () => {
     const res = evaluateCalculatorExpression(expr);
     if (res !== null) {
-      const finalVal = allowDecimal ? Math.max(0, res) : Math.max(0, Math.round(res));
-      setExpr(String(finalVal));
+      const clamped = Math.max(0, res);
+      setExpr(String(Number(clamped.toFixed(6))));
     }
   };
 
   const handleApplyCalculator = () => {
     const res = evaluateCalculatorExpression(expr);
     if (res !== null) {
-      const finalVal = allowDecimal ? Math.max(0, res) : Math.max(0, Math.round(res));
+      const clamped = Math.max(0, res);
+      const finalVal = allowDecimal
+        ? Number(clamped.toFixed(maxDecimals))
+        : Math.round(clamped);
       onChange(finalVal);
       onCommit?.(finalVal);
       setTextValue(finalVal === 0 ? '' : String(finalVal));
@@ -194,7 +198,7 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
     value === 0
       ? placeholder
       : new Intl.NumberFormat('zh-TW', {
-          maximumFractionDigits: allowDecimal ? 2 : 0,
+          maximumFractionDigits: allowDecimal ? maxDecimals : 0,
         }).format(value);
 
   return (
@@ -316,10 +320,18 @@ export const NumericCalculatorInput: React.FC<NumericCalculatorInputProps> = ({
               <div className="text-xl font-mono-num font-bold text-right mt-0.5 truncate">
                 {previewResult !== null
                   ? `= ${new Intl.NumberFormat('zh-TW', {
-                      maximumFractionDigits: allowDecimal ? 2 : 0,
-                    }).format(allowDecimal ? previewResult : Math.round(previewResult))}`
+                      maximumFractionDigits: Math.max(maxDecimals, 4),
+                    }).format(Math.max(0, previewResult))}`
                   : '= 0'}
               </div>
+              {!allowDecimal && previewResult !== null && !Number.isInteger(previewResult) && (
+                <div className="text-[11px] font-mono-num opacity-75 text-right mt-0.5">
+                  套用將四捨五入為{' '}
+                  {new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(
+                    Math.max(0, Math.round(previewResult))
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-4 gap-1.5 touch-manipulation">

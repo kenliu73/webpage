@@ -311,6 +311,7 @@ export const TripSettingsPanel: React.FC<TripSettingsPanelProps> = ({
                     }
                     prefix="NT$"
                     allowDecimal
+                    maxDecimals={6}
                     compact
                     ariaLabel={`${code} 現金固定匯率`}
                   />

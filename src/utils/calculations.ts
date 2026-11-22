@@ -102,7 +102,7 @@ export function evaluateCalculatorExpression(rawExpr: string): number | null {
     const fn = new Function(`"use strict"; return (${cleaned});`);
     const result = fn();
     if (typeof result === 'number' && Number.isFinite(result)) {
-      return Math.round(result * 100) / 100;
+      return Number(result.toFixed(6));
     }
     return null;
   } catch {
