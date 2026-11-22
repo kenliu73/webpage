@@ -10,6 +10,7 @@ export interface BudgetItem {
   id: string;
   name: string;
   budgetTwd: number;
+  preparedTwd?: number;
   order: number;
 }
 

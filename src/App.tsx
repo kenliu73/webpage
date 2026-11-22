@@ -1333,7 +1333,7 @@ export default function App() {
                 各項預算項目與金額設定
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                自由新增、編輯或刪除預算項目名稱與台幣預算額度（支援計算機輸入）。
+                自由新增、編輯或刪除預算項目名稱、台幣預算額度，並於同行輸入資金已準備金額以追蹤備款進度（支援計算機輸入）。
               </p>
             </div>
 

@@ -117,6 +117,7 @@ export function sanitizeImportedLedgerClient(
           : `b_imp_${index + 1}`,
       name: b.name!.trim().slice(0, 40),
       budgetTwd: Math.max(0, Math.round(Number(b.budgetTwd) || 0)),
+      preparedTwd: Math.max(0, Math.round(Number(b.preparedTwd) || 0)),
       order: typeof b.order === 'number' ? b.order : index,
     }));
 

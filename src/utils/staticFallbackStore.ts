@@ -263,7 +263,12 @@ export function staticUpdateBudgets(code: string, nextBudgets: BudgetItem[]): Tr
     ...current,
     version: current.version + 1,
     updatedAt: Date.now(),
-    budgets: nextBudgets.map((b, idx) => ({ ...b, order: idx })),
+    budgets: nextBudgets.map((b, idx) => ({
+      ...b,
+      budgetTwd: Math.max(0, Math.round(Number(b.budgetTwd) || 0)),
+      preparedTwd: Math.max(0, Math.round(Number(b.preparedTwd) || 0)),
+      order: idx,
+    })),
   };
   map[code] = updated;
   saveStaticLedgersMap(map);

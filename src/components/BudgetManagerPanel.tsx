@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, Save, Check, Pencil, X, ArrowUp, ArrowDown } from 'lucide-react';
 import type { BudgetItem } from '../types';
 import { formatTwd } from '../constants/currencies';
@@ -10,6 +10,14 @@ interface BudgetManagerPanelProps {
   saving?: boolean;
 }
 
+function getBudgetValue(item: BudgetItem): number {
+  return Math.max(0, Math.round(Number(item.budgetTwd) || 0));
+}
+
+function getPreparedValue(item: BudgetItem): number {
+  return Math.max(0, Math.round(Number(item.preparedTwd) || 0));
+}
+
 export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
   budgets,
   onSaveBudgets,
@@ -18,30 +26,136 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editAmount, setEditAmount] = useState(0);
+  const [editPrepared, setEditPrepared] = useState(0);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [newName, setNewName] = useState('');
   const [newAmount, setNewAmount] = useState(0);
+  const [newPrepared, setNewPrepared] = useState(0);
   const [savedNotice, setSavedNotice] = useState(false);
 
-  // If currently edited item was deleted externally via sync, exit edit mode
+  const [focusedPreparedId, setFocusedPreparedId] = useState<string | null>(null);
+  const focusedIdRef = useRef<string | null>(null);
+
+  const [preparedDrafts, setPreparedDrafts] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const item of budgets) {
+      const val = getPreparedValue(item);
+      initial[item.id] = val === 0 ? '' : String(val);
+    }
+    return initial;
+  });
+  const preparedDraftsRef = useRef<Record<string, string>>(preparedDrafts);
+  preparedDraftsRef.current = preparedDrafts;
+
+  // Sync draft values when budgets prop changes (e.g., switching trips or importing backups)
+  useEffect(() => {
+    setPreparedDrafts((prev) => {
+      const next: Record<string, string> = {};
+      for (const item of budgets) {
+        if (focusedIdRef.current === item.id && item.id in prev) {
+          next[item.id] = prev[item.id];
+        } else {
+          const val = getPreparedValue(item);
+          next[item.id] = val === 0 ? '' : String(val);
+        }
+      }
+      return next;
+    });
+  }, [budgets]);
+
+  // If currently edited item was removed, exit edit mode
   useEffect(() => {
     if (editingId && !budgets.some((b) => b.id === editingId)) {
       setEditingId(null);
     }
   }, [budgets, editingId]);
 
-  const totalBudget = budgets.reduce((sum, item) => sum + (Number(item.budgetTwd) || 0), 0);
+  const getEffectivePrepared = (item: BudgetItem): number => {
+    if (editingId === item.id) {
+      return Math.max(0, Math.round(editPrepared));
+    }
+    const draft = preparedDrafts[item.id];
+    if (draft !== undefined) {
+      return draft === '' ? 0 : Math.max(0, Math.round(Number(draft) || 0));
+    }
+    return getPreparedValue(item);
+  };
+
+  const totalBudget = budgets.reduce((sum, item) => sum + getBudgetValue(item), 0);
+  const totalPrepared = budgets.reduce((sum, item) => sum + getEffectivePrepared(item), 0);
+  const totalDiff = totalPrepared - totalBudget;
+  const readyCount = budgets.filter((item) => {
+    const b = getBudgetValue(item);
+    const p = getEffectivePrepared(item);
+    return b > 0 && p >= b;
+  }).length;
+  const overallPct =
+    totalBudget > 0 ? Math.min(100, Math.round((totalPrepared / totalBudget) * 100)) : 0;
 
   const triggerSavedNotice = () => {
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 1800);
   };
 
+  const handlePreparedFocus = (
+    item: BudgetItem,
+    e: React.FocusEvent<HTMLInputElement>
+  ) => {
+    focusedIdRef.current = item.id;
+    setFocusedPreparedId(item.id);
+    const currentDraft = preparedDraftsRef.current[item.id] ?? '';
+    if (currentDraft === '' || currentDraft === '0') {
+      setPreparedDrafts((prev) => ({ ...prev, [item.id]: '' }));
+    } else {
+      e.target.select();
+    }
+  };
+
+  const handlePreparedChange = (id: string, rawInput: string) => {
+    let cleaned = rawInput.replace(/[^0-9]/g, '');
+    if (cleaned.length > 1 && cleaned.startsWith('0')) {
+      cleaned = cleaned.replace(/^0+/, '');
+    }
+    if (cleaned === '0') {
+      cleaned = '';
+    }
+    setPreparedDrafts((prev) => ({ ...prev, [id]: cleaned }));
+  };
+
+  const commitPreparedDraft = async (id: string) => {
+    if (focusedIdRef.current === id) {
+      focusedIdRef.current = null;
+      setFocusedPreparedId(null);
+    }
+    const target = budgets.find((b) => b.id === id);
+    if (!target) return;
+
+    const rawDraft = preparedDraftsRef.current[id] ?? '';
+    const parsed = rawDraft === '' ? 0 : Math.max(0, Math.round(Number(rawDraft) || 0));
+    const currentSaved = getPreparedValue(target);
+
+    setPreparedDrafts((prev) => ({
+      ...prev,
+      [id]: parsed === 0 ? '' : String(parsed),
+    }));
+
+    if (parsed === currentSaved) return;
+
+    const next = budgets.map((item, idx) =>
+      item.id === id
+        ? { ...item, preparedTwd: parsed, order: idx }
+        : { ...item, order: idx }
+    );
+    await onSaveBudgets(next);
+    triggerSavedNotice();
+  };
+
   const handleStartEdit = (item: BudgetItem) => {
     setEditingId(item.id);
     setEditName(item.name);
-    setEditAmount(item.budgetTwd);
+    setEditAmount(getBudgetValue(item));
+    setEditPrepared(getEffectivePrepared(item));
     setConfirmDeleteId(null);
   };
 
@@ -49,22 +163,42 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
     setEditingId(null);
     setEditName('');
     setEditAmount(0);
+    setEditPrepared(0);
   };
+
+  const mergeDraftsIntoBudgets = (list: BudgetItem[]): BudgetItem[] =>
+    list.map((item, idx) => {
+      const rawDraft = preparedDraftsRef.current[item.id];
+      const preparedTwd =
+        rawDraft !== undefined
+          ? rawDraft === ''
+            ? 0
+            : Math.max(0, Math.round(Number(rawDraft) || 0))
+          : getPreparedValue(item);
+      return { ...item, preparedTwd, order: idx };
+    });
 
   const handleSaveEdit = async (id: string) => {
     const trimmed = editName.trim();
     if (!trimmed) return;
-    const next = budgets.map((item, idx) =>
+    const nextBudget = Math.max(0, Math.round(editAmount));
+    const nextPrepared = Math.max(0, Math.round(editPrepared));
+    const next = mergeDraftsIntoBudgets(budgets).map((item, idx) =>
       item.id === id
         ? {
             ...item,
             name: trimmed,
-            budgetTwd: Math.max(0, Math.round(editAmount)),
+            budgetTwd: nextBudget,
+            preparedTwd: nextPrepared,
             order: idx,
           }
         : { ...item, order: idx }
     );
     await onSaveBudgets(next);
+    setPreparedDrafts((prev) => ({
+      ...prev,
+      [id]: nextPrepared === 0 ? '' : String(nextPrepared),
+    }));
     setEditingId(null);
     triggerSavedNotice();
   };
@@ -72,7 +206,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
   const handleMoveItem = async (index: number, direction: -1 | 1) => {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= budgets.length) return;
-    const reordered = [...budgets];
+    const reordered = [...mergeDraftsIntoBudgets(budgets)];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(targetIndex, 0, moved);
     const next = reordered.map((item, idx) => ({ ...item, order: idx }));
@@ -81,9 +215,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
   };
 
   const handleDeleteItem = async (id: string) => {
-    const next = budgets
-      .filter((item) => item.id !== id)
-      .map((item, idx) => ({ ...item, order: idx }));
+    const next = mergeDraftsIntoBudgets(budgets.filter((item) => item.id !== id));
     await onSaveBudgets(next);
     setConfirmDeleteId(null);
     if (editingId === id) {
@@ -100,11 +232,13 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
       id: `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
       name: trimmed,
       budgetTwd: Math.max(0, Math.round(newAmount)),
+      preparedTwd: Math.max(0, Math.round(newPrepared)),
       order: budgets.length,
     };
-    const next = [...budgets, item];
+    const next = [...mergeDraftsIntoBudgets(budgets), item];
     setNewName('');
     setNewAmount(0);
+    setNewPrepared(0);
     await onSaveBudgets(next);
     triggerSavedNotice();
   };
@@ -112,29 +246,93 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
   return (
     <div className="space-y-4">
       {/* Summary Header (Yellow read-only) */}
-      <div className="display-yellow rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-medium opacity-80">旅遊總預算設定（以新台幣 TWD 為基準）</div>
-          <div className="text-xl font-mono-num font-bold mt-0.5">{formatTwd(totalBudget)}</div>
+      <div className="display-yellow rounded-xl px-4 py-3 space-y-2.5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-x-6 gap-y-2 flex-1 min-w-0">
+            <div>
+              <div className="text-[11px] sm:text-xs font-medium opacity-80">
+                旅遊總預算（TWD）
+              </div>
+              <div className="text-lg sm:text-xl font-mono-num font-bold mt-0.5">
+                {formatTwd(totalBudget)}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] sm:text-xs font-medium opacity-80">
+                資金已準備總額
+              </div>
+              <div className="text-lg sm:text-xl font-mono-num font-bold mt-0.5 text-emerald-800 dark:text-emerald-300">
+                {formatTwd(totalPrepared)}
+              </div>
+            </div>
+
+            <div className="col-span-2 sm:col-span-1">
+              <div className="text-[11px] sm:text-xs font-medium opacity-80">
+                整體備款狀態
+              </div>
+              <div className="text-sm sm:text-base font-mono-num font-bold mt-0.5">
+                {totalBudget === 0 ? (
+                  <span className="opacity-75">尚未設定預算</span>
+                ) : totalDiff >= 0 ? (
+                  <span className="text-emerald-800 dark:text-emerald-300">
+                    {totalDiff === 0
+                      ? '✓ 已全部準備齊全'
+                      : `✓ 已準備齊 (+${formatTwd(totalDiff)})`}
+                  </span>
+                ) : (
+                  <span className="text-rose-700 dark:text-rose-300">
+                    尚缺 {formatTwd(Math.abs(totalDiff))}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="text-xs font-semibold flex items-center gap-1.5 opacity-85 shrink-0">
+            {savedNotice ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
+                <span>已儲存</span>
+              </>
+            ) : saving ? (
+              <span>儲存中...</span>
+            ) : (
+              <span>
+                共 {budgets.length} 項 · 已齊 {readyCount} 項
+              </span>
+            )}
+          </div>
         </div>
-        <div className="text-xs font-semibold flex items-center gap-1.5 opacity-85">
-          {savedNotice ? (
-            <>
-              <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
-              <span>已儲存</span>
-            </>
-          ) : saving ? (
-            <span>儲存中...</span>
-          ) : (
-            <span>共 {budgets.length} 項預算</span>
-          )}
-        </div>
+
+        {totalBudget > 0 && (
+          <div className="space-y-1">
+            <div className="h-2 w-full rounded-full bg-yellow-200/80 dark:bg-yellow-900/50 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  totalPrepared >= totalBudget
+                    ? 'bg-emerald-600 dark:bg-emerald-400'
+                    : 'bg-amber-500 dark:bg-amber-400'
+                }`}
+                style={{ width: `${overallPct}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] opacity-75">
+              <span>提示：在下方每一列的「已準備」綠框輸入金額，離開欄位即自動儲存</span>
+              <span className="font-mono-num font-semibold">{overallPct}%</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Budget Items List with Reorder, Edit & Delete Controls */}
+      {/* Budget Items List with Same-Row Budget + Prepared Funds */}
       <div className="space-y-2.5">
         {budgets.map((item, idx) => {
           const isEditing = editingId === item.id;
+          const budget = getBudgetValue(item);
+          const prepared = getEffectivePrepared(item);
+          const diff = prepared - budget;
+          const draftStr = preparedDrafts[item.id] ?? (prepared === 0 ? '' : String(prepared));
 
           if (isEditing) {
             return (
@@ -142,26 +340,67 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
                 key={item.id}
                 className="p-3 rounded-xl border-2 border-emerald-500 dark:border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/25 space-y-2.5"
               >
-                <div className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">
-                  正在編輯預算項目
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">
+                    正在編輯預算項目
+                  </span>
+                  <span className="text-[11px] font-semibold">
+                    {editAmount > 0 && editPrepared >= editAmount ? (
+                      <span className="text-emerald-700 dark:text-emerald-300">
+                        ✓ 已準備齊
+                        {editPrepared > editAmount
+                          ? ` (+${formatTwd(editPrepared - editAmount)})`
+                          : ''}
+                      </span>
+                    ) : editAmount > 0 ? (
+                      <span className="text-amber-700 dark:text-amber-300">
+                        尚缺 {formatTwd(editAmount - editPrepared)}
+                      </span>
+                    ) : null}
+                  </span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_240px_auto] gap-2.5 items-center">
-                  <input
-                    type="text"
-                    autoFocus
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="輸入預算項目名稱"
-                    className="input-green w-full h-11 px-3 rounded-lg text-sm font-semibold"
-                  />
 
-                  <NumericCalculatorInput
-                    value={editAmount}
-                    onChange={(val) => setEditAmount(Math.round(val))}
-                    prefix="NT$"
-                    allowDecimal={false}
-                    ariaLabel={`${item.name} 預算金額`}
-                  />
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(160px,1fr)_minmax(380px,460px)_auto] gap-2.5 items-end">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-medium text-emerald-900/80 dark:text-emerald-200/80">
+                      預算項目名稱
+                    </label>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="輸入預算項目名稱"
+                      className="input-green w-full h-11 px-3 rounded-lg text-sm font-semibold"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-medium text-emerald-900/80 dark:text-emerald-200/80">
+                        預算金額
+                      </label>
+                      <NumericCalculatorInput
+                        value={editAmount}
+                        onChange={(val) => setEditAmount(Math.round(val))}
+                        prefix="NT$"
+                        allowDecimal={false}
+                        ariaLabel={`${item.name} 預算金額`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-medium text-emerald-900/80 dark:text-emerald-200/80">
+                        資金已準備
+                      </label>
+                      <NumericCalculatorInput
+                        value={editPrepared}
+                        onChange={(val) => setEditPrepared(Math.round(val))}
+                        prefix="NT$"
+                        allowDecimal={false}
+                        ariaLabel={`${item.name} 資金已準備金額`}
+                      />
+                    </div>
+                  </div>
 
                   <div className="flex items-center gap-1.5">
                     <button
@@ -190,18 +429,68 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
           return (
             <div
               key={item.id}
-              className="grid grid-cols-1 sm:grid-cols-[1fr_200px_auto] gap-2.5 items-center p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+              className="grid grid-cols-1 lg:grid-cols-[minmax(190px,1fr)_minmax(340px,430px)_auto] gap-2 sm:gap-2.5 items-center p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
             >
-              <div className="display-yellow-soft h-11 px-3.5 rounded-lg flex items-center gap-2 text-sm font-semibold min-w-0">
-                <span className="text-xs font-mono-num opacity-65 shrink-0">{idx + 1}.</span>
-                <span className="truncate">{item.name}</span>
+              {/* Item Name + Readiness Status Badge */}
+              <div className="display-yellow-soft h-11 px-3 rounded-lg flex items-center justify-between gap-2 text-sm font-semibold min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-mono-num opacity-65 shrink-0">{idx + 1}.</span>
+                  <span className="truncate">{item.name}</span>
+                </div>
+
+                {budget === 0 && prepared === 0 ? (
+                  <span className="text-[11px] font-medium opacity-60 shrink-0 whitespace-nowrap">
+                    未設預算
+                  </span>
+                ) : prepared >= budget ? (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-900/70 dark:text-emerald-200 shrink-0 whitespace-nowrap font-mono-num">
+                    {diff > 0 ? `✓ 已齊 +${formatTwd(diff)}` : '✓ 已準備齊'}
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 shrink-0 whitespace-nowrap font-mono-num">
+                    缺 {formatTwd(budget - prepared)}
+                  </span>
+                )}
               </div>
 
-              <div className="display-yellow h-11 px-3.5 rounded-lg flex items-center justify-between gap-2 font-mono-num font-bold text-sm">
-                <span className="text-xs font-normal opacity-75">預算</span>
-                <span>{formatTwd(item.budgetTwd)}</span>
+              {/* Same-row Budget (Yellow read-only) & Prepared Funds Input (Green editable) on Mobile & Desktop */}
+              <div className="grid grid-cols-2 gap-2 min-w-0">
+                <div className="display-yellow h-11 px-2.5 sm:px-3 rounded-lg flex items-center justify-between gap-1.5 font-mono-num font-bold text-xs sm:text-sm min-w-0">
+                  <span className="text-[11px] sm:text-xs font-normal opacity-75 shrink-0">
+                    預算
+                  </span>
+                  <span className="truncate">{formatTwd(budget)}</span>
+                </div>
+
+                <label className="input-green h-11 px-2 sm:px-3 rounded-lg flex items-center justify-between gap-1 min-w-0 cursor-text">
+                  <span className="text-[11px] sm:text-xs font-medium text-emerald-900/80 dark:text-emerald-200/80 shrink-0 select-none">
+                    已準備
+                  </span>
+                  <div className="flex items-center justify-end gap-0.5 flex-1 min-w-0">
+                    <span className="text-[11px] font-mono-num text-emerald-800/70 dark:text-emerald-200/70 shrink-0 select-none">
+                      NT$
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      aria-label={`${item.name} 資金已準備金額`}
+                      value={draftStr}
+                      placeholder={focusedPreparedId === item.id ? '' : '0'}
+                      onFocus={(e) => handlePreparedFocus(item, e)}
+                      onChange={(e) => handlePreparedChange(item.id, e.target.value)}
+                      onBlur={() => void commitPreparedDraft(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="w-full min-w-0 bg-transparent border-0 p-0 text-right font-mono-num font-bold text-base lg:text-sm text-emerald-950 dark:text-emerald-50 placeholder:text-emerald-700/45 dark:placeholder:text-emerald-300/40 focus:outline-none"
+                    />
+                  </div>
+                </label>
               </div>
 
+              {/* Action Buttons */}
               <div className="flex items-center gap-1.5 justify-end flex-wrap">
                 <button
                   type="button"
@@ -227,7 +516,7 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => handleStartEdit(item)}
-                  className="control-green flex-1 sm:flex-none h-11 px-3.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  className="control-green flex-1 lg:flex-none h-11 px-3.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap"
                 >
                   <Pencil className="w-3.5 h-3.5" />
                   <span>編輯</span>
@@ -272,26 +561,53 @@ export const BudgetManagerPanel: React.FC<BudgetManagerPanelProps> = ({
       {/* Add New Budget Item Form */}
       <form
         onSubmit={handleAddItem}
-        className="p-3 rounded-xl border border-dashed border-emerald-400 dark:border-emerald-700 bg-emerald-50/40 dark:bg-emerald-950/20"
+        className="p-3 rounded-xl border border-dashed border-emerald-400 dark:border-emerald-700 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2"
       >
-        <div className="text-xs font-semibold text-emerald-900 dark:text-emerald-200 mb-2">
+        <div className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">
           新增預算項目
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_240px_auto] gap-2.5 items-center">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="例如：當地租車、伴手禮..."
-            className="input-green w-full h-11 px-3 rounded-lg text-sm"
-          />
-          <NumericCalculatorInput
-            value={newAmount}
-            onChange={(val) => setNewAmount(Math.round(val))}
-            prefix="NT$"
-            allowDecimal={false}
-            ariaLabel="新預算項目金額"
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(160px,1fr)_minmax(380px,460px)_auto] gap-2.5 items-end">
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-emerald-900/80 dark:text-emerald-200/80">
+              項目名稱
+            </label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="例如：當地租車、伴手禮..."
+              className="input-green w-full h-11 px-3 rounded-lg text-sm"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <label className="block text-[11px] font-medium text-emerald-900/80 dark:text-emerald-200/80">
+                預算金額
+              </label>
+              <NumericCalculatorInput
+                value={newAmount}
+                onChange={(val) => setNewAmount(Math.round(val))}
+                prefix="NT$"
+                allowDecimal={false}
+                ariaLabel="新預算項目金額"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-[11px] font-medium text-emerald-900/80 dark:text-emerald-200/80">
+                資金已準備
+              </label>
+              <NumericCalculatorInput
+                value={newPrepared}
+                onChange={(val) => setNewPrepared(Math.round(val))}
+                prefix="NT$"
+                allowDecimal={false}
+                ariaLabel="新預算項目資金已準備金額"
+              />
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={!newName.trim() || saving}
